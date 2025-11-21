@@ -128,15 +128,29 @@ is_pm2_running() {
     return 1
 }
 
-# Get PM2 process uptime
+# Get PM2 process uptime (returns uptime in milliseconds)
 get_pm2_uptime() {
-    "$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2
+    # pm_uptime is a timestamp, not duration - need to calculate difference
+    local pm_uptime_timestamp=$("$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2)
+
+    if [ -z "$pm_uptime_timestamp" ] || [ "$pm_uptime_timestamp" = "0" ]; then
+        echo "0"
+        return
+    fi
+
+    # Get current time in milliseconds
+    local current_time_ms=$(date +%s%3N)
+
+    # Calculate uptime duration
+    local uptime_duration=$((current_time_ms - pm_uptime_timestamp))
+
+    echo "$uptime_duration"
 }
 
 # Format uptime
 format_uptime() {
     local uptime_ms=$1
-    if [ -z "$uptime_ms" ] || [ "$uptime_ms" = "0" ]; then
+    if [ -z "$uptime_ms" ] || [ "$uptime_ms" = "0" ] || [ "$uptime_ms" -lt "0" ]; then
         echo "just started"
         return
     fi

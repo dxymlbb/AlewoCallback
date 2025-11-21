@@ -3,7 +3,17 @@ import Subdomain from '../models/Subdomain.js';
 import DNSQuery from '../models/DNSQuery.js';
 import { getGeolocation } from '../utils/geolocation.js';
 
-const { Packet } = dns2;
+const { Packet, UDPClient } = dns2;
+
+// DNS RCODE constants (for dns2 v2.x compatibility)
+const RCODE = {
+  NOERROR: 0,
+  FORMERR: 1,
+  SERVFAIL: 2,
+  NXDOMAIN: 3,
+  NOTIMP: 4,
+  REFUSED: 5
+};
 
 // Get server IP from environment or detect
 const getServerIP = () => {
@@ -101,7 +111,7 @@ export const startDNSServer = (io) => {
           });
         } else if (type === Packet.TYPE.AAAA) {
           // IPv6 - return NODATA
-          response.header.rcode = Packet.RCODE.NOERROR;
+          response.header.rcode = RCODE.NOERROR;
         } else if (type === Packet.TYPE.TXT) {
           response.answers.push({
             name,
@@ -112,12 +122,12 @@ export const startDNSServer = (io) => {
           });
         } else {
           // For other types, return NODATA
-          response.header.rcode = Packet.RCODE.NOERROR;
+          response.header.rcode = RCODE.NOERROR;
         }
 
       } catch (error) {
         console.error('DNS Server Error:', error);
-        response.header.rcode = Packet.RCODE.SERVFAIL;
+        response.header.rcode = RCODE.SERVFAIL;
       }
 
       send(response);
