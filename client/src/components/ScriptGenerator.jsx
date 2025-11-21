@@ -105,10 +105,10 @@ const ScriptGenerator = ({ subdomain }) => {
     }
   };
 
-  const copyUrl = (filename) => {
-    const url = `https://${subdomain.subdomain}.${baseDomain}/script/${filename}`;
+  const copyUrl = (filename, protocol = 'https') => {
+    const url = `${protocol}://${subdomain.subdomain}.${baseDomain}/script/${filename}`;
     navigator.clipboard.writeText(url);
-    toast.success('URL copied to clipboard!');
+    toast.success(`${protocol.toUpperCase()} URL copied to clipboard!`);
   };
 
   const copyContent = (content) => {
@@ -289,7 +289,8 @@ const ScriptGenerator = ({ subdomain }) => {
           </div>
         ) : (
           scripts.map((script) => {
-            const url = `https://${subdomain.subdomain}.${baseDomain}/script/${script.filename}`;
+            const httpUrl = `http://${subdomain.subdomain}.${baseDomain}/script/${script.filename}`;
+            const httpsUrl = `https://${subdomain.subdomain}.${baseDomain}/script/${script.filename}`;
             const timeRemaining = getTimeRemaining(script.expiresAt);
             const isExpired = timeRemaining === 'Expired';
 
@@ -319,14 +320,6 @@ const ScriptGenerator = ({ subdomain }) => {
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => copyUrl(script.filename)}
-                        className="p-2 hover:bg-gray-700 rounded transition-colors"
-                        title="Copy URL"
-                        disabled={isExpired}
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
-                      <button
                         onClick={() => copyContent(script.content)}
                         className="p-2 hover:bg-gray-700 rounded transition-colors"
                         title="Copy Content"
@@ -350,8 +343,37 @@ const ScriptGenerator = ({ subdomain }) => {
                     </div>
                   </div>
 
-                  <div className="text-xs font-mono bg-gray-900/80 p-3 rounded border border-gray-700 mb-3 break-all">
-                    {url}
+                  {/* Script URLs - Both HTTP and HTTPS */}
+                  <div className="space-y-2 mb-3">
+                    <div className="text-xs text-gray-400 mb-1">Script URLs (choose your protocol):</div>
+
+                    {/* HTTP URL */}
+                    <div className="flex items-center gap-2 bg-gray-900/80 p-2 rounded border border-gray-700">
+                      <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs font-semibold">HTTP</span>
+                      <div className="flex-1 font-mono text-xs text-gray-300 break-all">{httpUrl}</div>
+                      <button
+                        onClick={() => copyUrl(script.filename, 'http')}
+                        className="p-1.5 hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+                        title="Copy HTTP URL"
+                        disabled={isExpired}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* HTTPS URL */}
+                    <div className="flex items-center gap-2 bg-gray-900/80 p-2 rounded border border-gray-700">
+                      <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-semibold">HTTPS</span>
+                      <div className="flex-1 font-mono text-xs text-gray-300 break-all">{httpsUrl}</div>
+                      <button
+                        onClick={() => copyUrl(script.filename, 'https')}
+                        className="p-1.5 hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+                        title="Copy HTTPS URL"
+                        disabled={isExpired}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <details className="mt-2">
