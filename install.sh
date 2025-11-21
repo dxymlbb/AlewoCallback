@@ -5,7 +5,8 @@
 # Complete setup from start to finish
 #######################################
 
-set -e
+# Don't exit on error - we handle errors manually
+set +e
 
 # Colors for output
 RED='\033[0;31m'
@@ -15,6 +16,9 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# State file for resume capability
+STATE_FILE="/tmp/alewo-callback-install-state"
 
 # Logging functions
 log_info() {
@@ -37,6 +41,34 @@ log_step() {
     echo -e "\n${PURPLE}========================================${NC}"
     echo -e "${PURPLE}$1${NC}"
     echo -e "${PURPLE}========================================${NC}\n"
+}
+
+# State management functions
+mark_step_complete() {
+    local step_name=$1
+    echo "$step_name" >> "$STATE_FILE"
+    log_success "Step completed: $step_name"
+}
+
+is_step_complete() {
+    local step_name=$1
+    if [ -f "$STATE_FILE" ] && grep -q "^$step_name$" "$STATE_FILE"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+skip_if_complete() {
+    local step_name=$1
+    local step_description=$2
+
+    if is_step_complete "$step_name"; then
+        log_info "Skipping $step_description (already completed)"
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Check if running as root
@@ -67,6 +99,33 @@ get_public_ip() {
     echo "$PUBLIC_IP"
 }
 
+# Show installation state
+show_state() {
+    if [ -f "$STATE_FILE" ]; then
+        echo -e "${CYAN}Completed steps:${NC}"
+        while IFS= read -r step; do
+            echo -e "  ${GREEN}✓${NC} $step"
+        done < "$STATE_FILE"
+        echo ""
+    fi
+}
+
+# Reset installation state
+reset_state() {
+    if [ -f "$STATE_FILE" ]; then
+        rm -f "$STATE_FILE"
+        log_success "Installation state reset"
+    fi
+}
+
+# Clear state on successful completion
+clear_state() {
+    if [ -f "$STATE_FILE" ]; then
+        rm -f "$STATE_FILE"
+        log_success "Installation completed - state cleared"
+    fi
+}
+
 # Banner
 show_banner() {
     clear
@@ -86,6 +145,18 @@ show_banner() {
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+
+    # Show resume information if state file exists
+    if [ -f "$STATE_FILE" ]; then
+        log_warning "Resuming previous installation"
+        show_state
+        if confirm "Do you want to reset and start fresh?"; then
+            reset_state
+        else
+            log_info "Continuing from last checkpoint..."
+        fi
+        echo ""
+    fi
 }
 
 # Prompt function
@@ -172,6 +243,8 @@ check_requirements() {
 
 # Install Node.js
 install_nodejs() {
+    skip_if_complete "nodejs" "Node.js installation" && return 0
+
     log_step "Installing Node.js 18.x"
 
     if command -v node &> /dev/null; then
@@ -186,78 +259,147 @@ install_nodejs() {
         apt-get install -y nodejs
         log_success "Node.js installed: $(node --version)"
     fi
+
+    mark_step_complete "nodejs"
 }
 
 # Install MongoDB
 install_mongodb() {
+    skip_if_complete "mongodb" "MongoDB installation" && return 0
+
     log_step "Installing MongoDB"
 
     if command -v mongod &> /dev/null; then
         log_info "MongoDB already installed"
         if confirm "Do you want to reinstall MongoDB?"; then
-            install_mongodb_package
+            install_mongodb_package || {
+                log_error "MongoDB installation failed"
+                return 1
+            }
         fi
     else
-        install_mongodb_package
+        install_mongodb_package || {
+            log_error "MongoDB installation failed"
+            log_info "You can retry installation by running this script again"
+            return 1
+        }
     fi
 
     # Start MongoDB
-    systemctl start mongod
-    systemctl enable mongod
+    systemctl start mongod 2>/dev/null || systemctl start mongodb 2>/dev/null
+    systemctl enable mongod 2>/dev/null || systemctl enable mongodb 2>/dev/null
 
     log_success "MongoDB installed and started"
+    mark_step_complete "mongodb"
 }
 
 install_mongodb_package() {
     if [ "$OS" = "ubuntu" ]; then
-        wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
-        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
-        apt-get update
-        apt-get install -y mongodb-org
+        local UBUNTU_CODENAME=$(lsb_release -cs)
+
+        # Ubuntu Noble (24.04) doesn't have MongoDB 6.0 official repo
+        # Use Jammy (22.04) repo as fallback or install from Universe
+        if [ "$UBUNTU_CODENAME" = "noble" ]; then
+            log_warning "Ubuntu 24.04 (Noble) detected"
+            log_info "Installing MongoDB from Ubuntu Universe repository..."
+
+            apt-get update
+            apt-get install -y mongodb-org || apt-get install -y mongodb
+
+        else
+            # For older Ubuntu versions, use official MongoDB repo
+            log_info "Setting up official MongoDB repository..."
+
+            # Use signed-by method instead of deprecated apt-key
+            curl -fsSL https://www.mongodb.org/static/pgp/server-6.0.asc | \
+                gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
+
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu $UBUNTU_CODENAME/mongodb-org/6.0 multiverse" | \
+                tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+
+            apt-get update
+            apt-get install -y mongodb-org
+        fi
+
     elif [ "$OS" = "debian" ]; then
-        wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add -
-        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/debian $(lsb_release -cs)/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+        log_info "Setting up MongoDB for Debian..."
+
+        # Use signed-by method for Debian too
+        curl -fsSL https://www.mongodb.org/static/pgp/server-6.0.asc | \
+            gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
+
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/debian $(lsb_release -cs)/mongodb-org/6.0 main" | \
+            tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+
         apt-get update
         apt-get install -y mongodb-org
     fi
+
+    if [ $? -ne 0 ]; then
+        log_error "MongoDB installation failed"
+        return 1
+    fi
+
+    return 0
 }
 
 # Install Nginx
 install_nginx() {
+    skip_if_complete "nginx" "Nginx installation" && return 0
+
     log_step "Installing Nginx"
 
     if command -v nginx &> /dev/null; then
         log_info "Nginx already installed"
     else
-        apt-get install -y nginx
+        apt-get install -y nginx || {
+            log_error "Nginx installation failed"
+            return 1
+        }
         systemctl start nginx
         systemctl enable nginx
         log_success "Nginx installed and started"
     fi
+
+    mark_step_complete "nginx"
 }
 
 # Install Certbot
 install_certbot() {
+    skip_if_complete "certbot" "Certbot installation" && return 0
+
     log_step "Installing Certbot (for SSL)"
 
     if command -v certbot &> /dev/null; then
         log_info "Certbot already installed"
     else
-        apt-get install -y certbot python3-certbot-nginx
+        apt-get install -y certbot python3-certbot-nginx || {
+            log_error "Certbot installation failed"
+            return 1
+        }
         log_success "Certbot installed"
     fi
+
+    mark_step_complete "certbot"
 }
 
 # Install PM2
 install_pm2() {
+    skip_if_complete "pm2" "PM2 installation" && return 0
+
     log_step "Installing PM2"
 
     if command -v pm2 &> /dev/null; then
         log_info "PM2 already installed"
     else
-        npm install -g pm2
+        npm install -g pm2 || {
+            log_error "PM2 installation failed"
+            return 1
+        }
         log_success "PM2 installed"
     fi
+
+    mark_step_complete "pm2"
 }
 
 # Collect configuration
@@ -324,19 +466,27 @@ collect_configuration() {
 
 # Setup application
 setup_application() {
+    skip_if_complete "setup_application" "Application setup" && return 0
+
     log_step "Setting Up Application"
 
     INSTALL_DIR="/var/www/alewo-callback"
 
     # Create directory if not exists
     if [ ! -d "$INSTALL_DIR" ]; then
-        mkdir -p "$INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR" || {
+            log_error "Failed to create directory: $INSTALL_DIR"
+            return 1
+        }
         log_info "Created directory: $INSTALL_DIR"
     fi
 
     # Copy files
     log_info "Copying application files..."
-    cp -r ./* "$INSTALL_DIR/"
+    cp -r ./* "$INSTALL_DIR/" || {
+        log_error "Failed to copy application files"
+        return 1
+    }
     cd "$INSTALL_DIR"
 
     # Create .env file
@@ -376,30 +526,45 @@ VITE_BASE_DOMAIN=$DOMAIN
 EOF
 
     log_success "Environment configuration created"
+    mark_step_complete "setup_application"
 }
 
 # Install dependencies
 install_dependencies() {
+    skip_if_complete "dependencies" "Application dependencies installation" && return 0
+
     log_step "Installing Application Dependencies"
 
     cd "$INSTALL_DIR"
 
     log_info "Installing backend dependencies..."
-    npm install --production
+    npm install --production || {
+        log_error "Backend dependencies installation failed"
+        return 1
+    }
 
     log_info "Installing frontend dependencies..."
     cd client
-    npm install
+    npm install || {
+        log_error "Frontend dependencies installation failed"
+        return 1
+    }
 
     log_info "Building frontend..."
-    npm run build
+    npm run build || {
+        log_error "Frontend build failed"
+        return 1
+    }
 
     cd "$INSTALL_DIR"
     log_success "Dependencies installed and frontend built"
+    mark_step_complete "dependencies"
 }
 
 # Create admin user
 create_admin_user() {
+    skip_if_complete "admin_user" "Administrator account creation" && return 0
+
     log_step "Creating Administrator Account"
 
     cd "$INSTALL_DIR"
@@ -452,12 +617,17 @@ EOFSCRIPT
     export ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
     # Run setup script
-    node setup-admin.js
+    node setup-admin.js || {
+        log_error "Failed to create admin user"
+        rm -f setup-admin.js
+        return 1
+    }
 
     # Remove setup script
     rm setup-admin.js
 
     log_success "Administrator account created"
+    mark_step_complete "admin_user"
 }
 
 # Dynamic DNS Provider Detection
@@ -794,6 +964,8 @@ show_txt_record_instruction() {
 
 # Setup SSL with interactive options
 setup_ssl() {
+    skip_if_complete "ssl_setup" "SSL setup" && return 0
+
     if [ "$USE_SSL" = true ]; then
         log_step "SSL Certificate Setup"
 
@@ -801,6 +973,7 @@ setup_ssl() {
         if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             log_warning "SSL cannot be used with IP address"
             setup_self_signed_ssl
+            mark_step_complete "ssl_setup"
             return
         fi
 
@@ -838,6 +1011,8 @@ setup_ssl() {
     else
         log_info "Skipping SSL setup"
     fi
+
+    mark_step_complete "ssl_setup"
 }
 
 # Let's Encrypt DNS Challenge
@@ -999,6 +1174,8 @@ EOF
 
 # Configure Nginx
 configure_nginx() {
+    skip_if_complete "nginx_config" "Nginx configuration" && return 0
+
     log_step "Configuring Nginx"
 
     if [ "$USE_SSL" = true ]; then
@@ -1083,16 +1260,25 @@ EOFNGINX
     rm -f /etc/nginx/sites-enabled/default
 
     # Test configuration
-    nginx -t
+    nginx -t || {
+        log_error "Nginx configuration test failed"
+        return 1
+    }
 
     # Reload Nginx
-    systemctl reload nginx
+    systemctl reload nginx || {
+        log_error "Failed to reload Nginx"
+        return 1
+    }
 
     log_success "Nginx configured and reloaded"
+    mark_step_complete "nginx_config"
 }
 
 # Setup PM2
 setup_pm2() {
+    skip_if_complete "pm2_setup" "PM2 process manager setup" && return 0
+
     log_step "Setting Up PM2 Process Manager"
 
     cd "$INSTALL_DIR"
@@ -1101,19 +1287,30 @@ setup_pm2() {
     pm2 delete alewo-callback 2>/dev/null || true
 
     # Start application
-    pm2 start server/index.js --name alewo-callback
+    pm2 start server/index.js --name alewo-callback || {
+        log_error "Failed to start application with PM2"
+        return 1
+    }
 
     # Save PM2 configuration
-    pm2 save
+    pm2 save || {
+        log_error "Failed to save PM2 configuration"
+        return 1
+    }
 
     # Setup PM2 startup
-    pm2 startup | tail -n 1 | bash
+    pm2 startup | tail -n 1 | bash || {
+        log_warning "PM2 startup configuration may have issues"
+    }
 
     log_success "PM2 configured and application started"
+    mark_step_complete "pm2_setup"
 }
 
 # Setup firewall
 setup_firewall() {
+    skip_if_complete "firewall" "Firewall configuration" && return 0
+
     log_step "Configuring Firewall"
 
     if command -v ufw &> /dev/null; then
@@ -1124,6 +1321,9 @@ setup_firewall() {
         ufw allow 80/tcp
         ufw allow 443/tcp
 
+        # Allow DNS
+        ufw allow 53/udp
+
         # Enable firewall
         echo "y" | ufw enable
 
@@ -1131,15 +1331,22 @@ setup_firewall() {
     else
         log_warning "UFW not installed, skipping firewall configuration"
     fi
+
+    mark_step_complete "firewall"
 }
 
 # Create management scripts
 create_management_scripts() {
+    skip_if_complete "management_scripts" "Management command installation" && return 0
+
     log_step "Installing Management Command"
 
     # Copy alewo-callback command to /usr/local/bin/
     if [ -f "$INSTALL_DIR/alewo-callback" ]; then
-        cp "$INSTALL_DIR/alewo-callback" /usr/local/bin/alewo-callback
+        cp "$INSTALL_DIR/alewo-callback" /usr/local/bin/alewo-callback || {
+            log_error "Failed to copy alewo-callback command"
+            return 1
+        }
         chmod +x /usr/local/bin/alewo-callback
         log_success "alewo-callback command installed to /usr/local/bin/"
     else
@@ -1154,6 +1361,8 @@ create_management_scripts() {
         log_error "Failed to install alewo-callback command"
         return 1
     fi
+
+    mark_step_complete "management_scripts"
 }
 
 # Test installation
@@ -1281,63 +1490,155 @@ main() {
     # Check system requirements
     check_requirements
 
-    # Collect configuration
-    collect_configuration
+    # Collect configuration (skip if resuming and already collected)
+    if ! is_step_complete "configuration"; then
+        collect_configuration
+        mark_step_complete "configuration"
+    else
+        log_info "Using previous configuration"
+        # Load configuration from previous run
+        if [ -f "/tmp/alewo-callback-config" ]; then
+            source /tmp/alewo-callback-config
+        fi
+    fi
+
+    # Save configuration for resume capability
+    cat > /tmp/alewo-callback-config <<EOFCONFIG
+DOMAIN="$DOMAIN"
+USE_SSL=$USE_SSL
+APP_PORT=$APP_PORT
+MONGODB_URI="$MONGODB_URI"
+ADMIN_USERNAME="$ADMIN_USERNAME"
+ADMIN_EMAIL="$ADMIN_EMAIL"
+ADMIN_PASSWORD="$ADMIN_PASSWORD"
+JWT_SECRET="$JWT_SECRET"
+FILE_CLEANUP_TIME=$FILE_CLEANUP_TIME
+PUBLIC_IP="$PUBLIC_IP"
+INSTALL_DIR="/var/www/alewo-callback"
+EOFCONFIG
 
     # Update system
-    log_step "Updating System Packages"
-    apt-get update
-    apt-get upgrade -y
+    if ! is_step_complete "system_update"; then
+        log_step "Updating System Packages"
+        apt-get update || log_warning "apt-get update had some warnings"
+        apt-get upgrade -y || log_warning "apt-get upgrade had some warnings"
+        mark_step_complete "system_update"
+    else
+        log_info "Skipping system update (already completed)"
+    fi
 
     # Install prerequisites
-    apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https software-properties-common
+    if ! is_step_complete "prerequisites"; then
+        log_step "Installing Prerequisites"
+        apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https software-properties-common || {
+            log_error "Failed to install prerequisites"
+            log_info "Run the script again to retry from this step"
+            exit 1
+        }
+        mark_step_complete "prerequisites"
+    else
+        log_info "Skipping prerequisites (already completed)"
+    fi
 
     # Install Node.js
-    install_nodejs
+    install_nodejs || {
+        log_error "Node.js installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Install MongoDB
-    install_mongodb
+    install_mongodb || {
+        log_error "MongoDB installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Install Nginx
-    install_nginx
+    install_nginx || {
+        log_error "Nginx installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Install Certbot
     if [ "$USE_SSL" = true ]; then
-        install_certbot
+        install_certbot || {
+            log_warning "Certbot installation failed - continuing without SSL"
+            USE_SSL=false
+        }
     fi
 
     # Install PM2
-    install_pm2
+    install_pm2 || {
+        log_error "PM2 installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Setup application
-    setup_application
+    setup_application || {
+        log_error "Application setup failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Install dependencies
-    install_dependencies
+    install_dependencies || {
+        log_error "Dependencies installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Create admin user
-    create_admin_user
+    create_admin_user || {
+        log_error "Admin user creation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Setup SSL
-    setup_ssl
+    setup_ssl || {
+        log_warning "SSL setup had issues - continuing"
+    }
 
     # Configure Nginx
-    configure_nginx
+    configure_nginx || {
+        log_error "Nginx configuration failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Setup PM2
-    setup_pm2
+    setup_pm2 || {
+        log_error "PM2 setup failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Setup firewall
-    setup_firewall
+    setup_firewall || {
+        log_warning "Firewall setup had issues - continuing"
+    }
 
     # Create management scripts
-    create_management_scripts
+    create_management_scripts || {
+        log_error "Management scripts installation failed - exiting"
+        log_info "Run the script again to retry from this step"
+        exit 1
+    }
 
     # Test installation
     test_installation
 
     # Show completion message
     show_completion
+
+    # Clear state file on successful completion
+    clear_state
+
+    # Clean up temporary config
+    rm -f /tmp/alewo-callback-config
 }
 
 # Run main installation
