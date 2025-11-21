@@ -159,15 +159,17 @@ export const exportInteractions = async (req, res) => {
 
 // Helper function to convert to CSV
 const convertToCSV = (interactions) => {
-  const headers = ['Type', 'Timestamp', 'Source IP', 'Details'];
+  const headers = ['Type', 'Timestamp', 'Source IP', 'Country', 'City', 'Details'];
   const rows = interactions.map(i => {
     const timestamp = new Date(i.timestamp).toISOString();
     const sourceIP = i.type === 'HTTP' ? i.ip : i.sourceIP;
+    const country = i.geolocation?.country || '';
+    const city = i.geolocation?.city || '';
     const details = i.type === 'HTTP'
       ? `${i.method} ${i.path}`
-      : `${i.type} ${i.query}`;
+      : `${i.queryType || 'UNKNOWN'} ${i.query}`;
 
-    return [i.type, timestamp, sourceIP, details].map(field =>
+    return [i.type, timestamp, sourceIP, country, city, details].map(field =>
       `"${String(field || '').replace(/"/g, '""')}"`
     ).join(',');
   });
