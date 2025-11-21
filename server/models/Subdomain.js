@@ -44,7 +44,7 @@ const subdomainSchema = new mongoose.Schema({
 
 // Index for faster queries
 subdomainSchema.index({ userId: 1, createdAt: -1 });
-subdomainSchema.index({ subdomain: 1 });
+// subdomain index is already created by unique: true on line 12
 subdomainSchema.index({ expiresAt: 1 }); // For auto-cleanup
 
 export default mongoose.model('Subdomain', subdomainSchema);
