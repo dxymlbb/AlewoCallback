@@ -294,21 +294,32 @@ install_mongodb() {
 }
 
 install_mongodb_package() {
+    # Clean up any existing MongoDB repository files first
+    log_info "Cleaning up old MongoDB repository files..."
+    rm -f /etc/apt/sources.list.d/mongodb*.list
+
     if [ "$OS" = "ubuntu" ]; then
         local UBUNTU_CODENAME=$(lsb_release -cs)
 
-        # Ubuntu Noble (24.04) doesn't have MongoDB 6.0 official repo
-        # Use Jammy (22.04) repo as fallback or install from Universe
+        # Ubuntu Noble (24.04) - use MongoDB 8.0 with Jammy repo
         if [ "$UBUNTU_CODENAME" = "noble" ]; then
             log_warning "Ubuntu 24.04 (Noble) detected"
-            log_info "Installing MongoDB from Ubuntu Universe repository..."
+            log_info "Installing MongoDB 8.0 (compatible version for Noble)..."
+
+            # Add MongoDB 8.0 GPG key
+            curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+                gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+
+            # Add MongoDB 8.0 repository using Jammy (compatible with Noble)
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | \
+                tee /etc/apt/sources.list.d/mongodb-org-8.0.list
 
             apt-get update
-            apt-get install -y mongodb-org || apt-get install -y mongodb
+            apt-get install -y mongodb-org
 
         else
-            # For older Ubuntu versions, use official MongoDB repo
-            log_info "Setting up official MongoDB repository..."
+            # For older Ubuntu versions, use official MongoDB 6.0 repo
+            log_info "Setting up MongoDB 6.0 repository..."
 
             # Use signed-by method instead of deprecated apt-key
             curl -fsSL https://www.mongodb.org/static/pgp/server-6.0.asc | \
