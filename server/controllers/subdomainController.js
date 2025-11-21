@@ -64,9 +64,9 @@ export const createCustomSubdomain = async (req, res) => {
     let expiry = 10; // Default 10 minutes
     if (expiryMinutes) {
       const parsed = parseInt(expiryMinutes);
-      if (isNaN(parsed) || parsed < 1 || parsed > 1440) {
+      if (isNaN(parsed) || parsed < 1 || parsed > 10080) {
         return res.status(400).json({
-          message: 'Invalid expiry time. Must be between 1 and 1440 minutes (24 hours)'
+          message: 'Invalid expiry time. Must be between 1 and 10080 minutes (7 days)'
         });
       }
       expiry = parsed;

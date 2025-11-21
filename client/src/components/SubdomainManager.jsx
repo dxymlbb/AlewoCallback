@@ -131,11 +131,11 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
               className="input-field w-full"
               placeholder="60"
               min="1"
-              max="1440"
+              max="10080"
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              Set expiry time between 1 minute and 1440 minutes (24 hours)
+              Set expiry time between 1 minute and 10080 minutes (7 days)
             </p>
           </div>
 

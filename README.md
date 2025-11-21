@@ -7,9 +7,10 @@ A modern, colorful callback service similar to Burp Collaborator. Monitor HTTP/H
 - **DNS + HTTP Monitoring**: Full DNS server integration for out-of-band detection
 - **Real-time Interactions**: Live DNS queries and HTTP requests with Socket.IO
 - **Combined Timeline View**: See all DNS and HTTP interactions in one unified timeline
-- **Auto-Expiring Subdomains**: Random subdomains expire after 10 minutes, custom subdomains support user-defined expiry (1-1440 minutes)
+- **IP Geolocation**: Automatic geolocation detection for all DNS and HTTP requests (country, region, city, coordinates)
+- **Auto-Expiring Subdomains**: Random subdomains expire after 10 minutes, custom subdomains support user-defined expiry (1 minute to 7 days)
 - **Modern UI**: Beautiful, colorful design with animated gradients and glass-morphism effects
-- **Random & Custom Subdomains**: Generate random subdomains (10 min expiry) or create custom subdomains with configurable expiry time
+- **Random & Custom Subdomains**: Generate random subdomains (10 min expiry) or create custom subdomains with configurable expiry time (up to 7 days)
 - **All HTTP Methods**: Support for GET, POST, PUT, DELETE, PATCH, and more
 - **SSL/HTTPS Support**: Secure callback handling with Let's Encrypt integration
 - **Comprehensive Request Viewer**: View headers, query parameters, body, and metadata

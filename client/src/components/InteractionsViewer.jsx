@@ -346,6 +346,26 @@ const InteractionsViewer = ({ subdomain }) => {
                             <span className="text-gray-500">Protocol:</span>
                             <span className="ml-2 text-gray-300">{item.protocol}</span>
                           </div>
+                          {item.geolocation && (item.geolocation.country || item.geolocation.city) && (
+                            <>
+                              <div>
+                                <span className="text-gray-500">Location:</span>
+                                <span className="ml-2 text-gray-300">
+                                  {[item.geolocation.city, item.geolocation.region, item.geolocation.country]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </span>
+                              </div>
+                              {item.geolocation.ll && item.geolocation.ll.length === 2 && (
+                                <div>
+                                  <span className="text-gray-500">Coordinates:</span>
+                                  <span className="ml-2 text-gray-300 font-mono">
+                                    {item.geolocation.ll[0]}, {item.geolocation.ll[1]}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
                           <div className="col-span-2">
                             <span className="text-gray-500">User Agent:</span>
                             <span className="ml-2 text-gray-300 break-all">{item.userAgent}</span>
@@ -402,6 +422,26 @@ const InteractionsViewer = ({ subdomain }) => {
                             <span className="text-gray-500">Response:</span>
                             <span className="ml-2 text-gray-300">{item.response || 'N/A'}</span>
                           </div>
+                          {item.geolocation && (item.geolocation.country || item.geolocation.city) && (
+                            <>
+                              <div>
+                                <span className="text-gray-500">Location:</span>
+                                <span className="ml-2 text-gray-300">
+                                  {[item.geolocation.city, item.geolocation.region, item.geolocation.country]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </span>
+                              </div>
+                              {item.geolocation.ll && item.geolocation.ll.length === 2 && (
+                                <div>
+                                  <span className="text-gray-500">Coordinates:</span>
+                                  <span className="ml-2 text-gray-300 font-mono">
+                                    {item.geolocation.ll[0]}, {item.geolocation.ll[1]}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
                           <div className="col-span-2">
                             <span className="text-gray-500">Timestamp:</span>
                             <span className="ml-2 text-gray-300">{new Date(item.timestamp).toLocaleString()}</span>

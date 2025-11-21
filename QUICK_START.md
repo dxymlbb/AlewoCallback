@@ -77,13 +77,14 @@ nslookup test.yourdomain.com YOUR_SERVER_IP
 ```bash
 # Click "Custom Subdomain"
 # Enter subdomain name: mytest
-# Set expiry time: 60 (minutes) - you can set between 1 and 1440 minutes (24 hours)
+# Set expiry time: 60 (minutes) - you can set between 1 and 10080 minutes (7 days)
 # You'll get: mytest.yourdomain.com (expires in 60 minutes or your chosen time)
 ```
 
 **Note:**
 - Random subdomains always expire after 10 minutes
-- Custom subdomains let you choose expiry time (1 minute to 24 hours)
+- Custom subdomains let you choose expiry time (1 minute to 7 days)
+- All requests include automatic IP geolocation (country, region, city, coordinates)
 
 ### 2. Test DNS Detection
 
@@ -132,14 +133,17 @@ wget http://abc123def.yourdomain.com/payload
 - 🌐 HTTP requests (GET, POST, PUT, DELETE, etc.)
 - 📡 DNS queries (A, AAAA, TXT, MX, CNAME, etc.)
 - 🕒 Real-time updates via WebSocket
+- 🌍 IP Geolocation (country, city, coordinates)
 - 📊 Search and filter capabilities
 - 💾 Export to JSON or CSV
 
 **Click any interaction to see:**
 - Full request/query details
 - Headers, body, query params
-- Source IP and timestamp
+- Source IP and geolocation (country, region, city)
+- GPS coordinates (latitude, longitude)
 - User agent and protocol
+- Timestamp
 
 ## 🔧 Management Commands
 
@@ -270,8 +274,9 @@ If RCE exists, you'll see:
 
 ## 🔒 Security Features
 
-- **Auto-expiring subdomains**: Random subdomains deleted after 10 minutes, custom subdomains deleted based on user-defined expiry (1-1440 minutes)
+- **Auto-expiring subdomains**: Random subdomains deleted after 10 minutes, custom subdomains deleted based on user-defined expiry (1 minute to 7 days)
 - **Auto-expiring scripts**: Deleted after 5 minutes
+- **IP Geolocation tracking**: Automatic location detection for all requests
 - **No public registration**: Admin-only access
 - **JWT authentication**: Secure token-based auth
 - **HTTPS/SSL support**: Let's Encrypt integration

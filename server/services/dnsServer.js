@@ -1,6 +1,7 @@
 import dns2 from 'dns2';
 import Subdomain from '../models/Subdomain.js';
 import DNSQuery from '../models/DNSQuery.js';
+import { getGeolocation } from '../utils/geolocation.js';
 
 const { Packet } = dns2;
 
@@ -58,6 +59,9 @@ export const startDNSServer = (io) => {
           });
 
           if (subdomain) {
+            // Get geolocation from source IP
+            const geolocation = getGeolocation(rinfo.address);
+
             // Log DNS query to database
             const dnsQuery = await DNSQuery.create({
               subdomainId: subdomain._id,
@@ -65,6 +69,7 @@ export const startDNSServer = (io) => {
               query: name,
               type: Packet.TYPE[type] || 'UNKNOWN',
               sourceIP: rinfo.address,
+              geolocation,
               response: serverIP,
               timestamp: new Date()
             });

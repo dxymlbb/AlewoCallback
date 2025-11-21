@@ -1,6 +1,7 @@
 import Subdomain from '../models/Subdomain.js';
 import Callback from '../models/Callback.js';
 import Script from '../models/Script.js';
+import { getGeolocation } from '../utils/geolocation.js';
 
 // Extract subdomain from hostname
 const extractSubdomain = (hostname, baseDomain) => {
@@ -88,6 +89,12 @@ export const captureCallback = async (req, res, next) => {
       }
     }
 
+    // Get client IP
+    const clientIp = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+
+    // Get geolocation
+    const geolocation = getGeolocation(clientIp);
+
     // Create callback record
     const callback = await Callback.create({
       subdomainId: subdomain._id,
@@ -98,7 +105,8 @@ export const captureCallback = async (req, res, next) => {
       query: req.query,
       body,
       bodyRaw,
-      ip: req.ip || req.connection.remoteAddress,
+      ip: clientIp,
+      geolocation,
       userAgent: req.headers['user-agent'] || '',
       protocol: req.protocol
     });

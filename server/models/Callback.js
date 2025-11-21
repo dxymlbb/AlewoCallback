@@ -39,6 +39,14 @@ const callbackSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  geolocation: {
+    country: { type: String, default: '' },
+    region: { type: String, default: '' },
+    city: { type: String, default: '' },
+    timezone: { type: String, default: '' },
+    ll: { type: [Number], default: [] }, // [latitude, longitude]
+    range: { type: [Number], default: [] }
+  },
   userAgent: {
     type: String,
     default: ''

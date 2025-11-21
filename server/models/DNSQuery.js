@@ -24,6 +24,14 @@ const dnsQuerySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  geolocation: {
+    country: { type: String, default: '' },
+    region: { type: String, default: '' },
+    city: { type: String, default: '' },
+    timezone: { type: String, default: '' },
+    ll: { type: [Number], default: [] }, // [latitude, longitude]
+    range: { type: [Number], default: [] }
+  },
   response: {
     type: mongoose.Schema.Types.Mixed,
     default: null
