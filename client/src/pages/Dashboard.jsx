@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, User, Shield } from 'lucide-react';
+import { LogOut, User, Shield, Globe, Filter } from 'lucide-react';
 import SubdomainManager from '../components/SubdomainManager';
 import InteractionsViewer from '../components/InteractionsViewer';
 import ScriptGenerator from '../components/ScriptGenerator';
+import StatisticsDashboard from '../components/StatisticsDashboard';
+import GlobalInteractions from '../components/GlobalInteractions';
 import socketService from '../services/socket';
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const [selectedSubdomain, setSelectedSubdomain] = useState(null);
+  const [viewMode, setViewMode] = useState('subdomain'); // 'subdomain' or 'global'
 
   useEffect(() => {
     // Connect to socket
@@ -63,18 +66,58 @@ const Dashboard = () => {
         <div className="fixed top-20 right-20 w-96 h-96 bg-primary-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float pointer-events-none"></div>
         <div className="fixed bottom-20 left-20 w-96 h-96 bg-secondary-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '2s' }}></div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
-          {/* Left Column */}
-          <div className="space-y-6">
-            <SubdomainManager onSubdomainSelect={setSelectedSubdomain} />
-            <ScriptGenerator subdomain={selectedSubdomain} />
-          </div>
+        {/* Statistics Dashboard */}
+        <div className="mb-6 relative">
+          <StatisticsDashboard />
+        </div>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            <InteractionsViewer subdomain={selectedSubdomain} />
+        {/* View Mode Toggle */}
+        <div className="mb-6 relative">
+          <div className="flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setViewMode('subdomain')}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex items-center gap-2 ${
+                viewMode === 'subdomain'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Subdomain View
+            </button>
+            <button
+              onClick={() => setViewMode('global')}
+              className={`px-4 py-2 rounded-md text-sm font-semibold transition-all flex items-center gap-2 ${
+                viewMode === 'global'
+                  ? 'bg-primary-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              Global View
+            </button>
           </div>
         </div>
+
+        {/* Content based on view mode */}
+        {viewMode === 'subdomain' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
+            {/* Left Column */}
+            <div className="space-y-6">
+              <SubdomainManager onSubdomainSelect={setSelectedSubdomain} />
+              <ScriptGenerator subdomain={selectedSubdomain} />
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-6">
+              <InteractionsViewer subdomain={selectedSubdomain} />
+            </div>
+          </div>
+        ) : (
+          <div className="relative">
+            <GlobalInteractions />
+          </div>
+        )}
       </main>
     </div>
   );
