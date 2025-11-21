@@ -17,6 +17,22 @@ const InteractionsViewer = ({ subdomain }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [showFilters, setShowFilters] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState('N/A');
+
+  // Calculate time remaining
+  const getTimeRemaining = () => {
+    if (!subdomain || !subdomain.expiresAt) return 'N/A';
+    const now = new Date();
+    const expires = new Date(subdomain.expiresAt);
+    const diff = expires - now;
+
+    if (diff <= 0) return 'Expired';
+
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     if (subdomain) {
@@ -28,6 +44,24 @@ const InteractionsViewer = ({ subdomain }) => {
       socketService.off('newCallback');
       socketService.off('newDNSQuery');
     };
+  }, [subdomain]);
+
+  // Timer for expiry countdown
+  useEffect(() => {
+    if (!subdomain) {
+      setTimeRemaining('N/A');
+      return;
+    }
+
+    // Initial update
+    setTimeRemaining(getTimeRemaining());
+
+    // Update every second
+    const interval = setInterval(() => {
+      setTimeRemaining(getTimeRemaining());
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, [subdomain]);
 
   const setupSocketListeners = () => {
@@ -160,33 +194,6 @@ const InteractionsViewer = ({ subdomain }) => {
       </div>
     );
   }
-
-  // Calculate time remaining
-  const getTimeRemaining = () => {
-    if (!subdomain.expiresAt) return 'N/A';
-    const now = new Date();
-    const expires = new Date(subdomain.expiresAt);
-    const diff = expires - now;
-
-    if (diff <= 0) return 'Expired';
-
-    const minutes = Math.floor(diff / 60000);
-    const seconds = Math.floor((diff % 60000) / 1000);
-
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const [timeRemaining, setTimeRemaining] = useState(getTimeRemaining());
-
-  useEffect(() => {
-    if (!subdomain) return;
-
-    const interval = setInterval(() => {
-      setTimeRemaining(getTimeRemaining());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [subdomain]);
 
   if (loading) {
     return <div className="card text-center py-8">Loading interactions...</div>;
