@@ -47,7 +47,7 @@ export const createRandomSubdomain = async (req, res) => {
 // Create custom subdomain
 export const createCustomSubdomain = async (req, res) => {
   try {
-    const { subdomain } = req.body;
+    const { subdomain, expiryMinutes } = req.body;
 
     if (!subdomain) {
       return res.status(400).json({ message: 'Subdomain is required' });
@@ -60,6 +60,18 @@ export const createCustomSubdomain = async (req, res) => {
       });
     }
 
+    // Validate expiry minutes
+    let expiry = 10; // Default 10 minutes
+    if (expiryMinutes) {
+      const parsed = parseInt(expiryMinutes);
+      if (isNaN(parsed) || parsed < 1 || parsed > 1440) {
+        return res.status(400).json({
+          message: 'Invalid expiry time. Must be between 1 and 1440 minutes (24 hours)'
+        });
+      }
+      expiry = parsed;
+    }
+
     // Check if subdomain exists
     const exists = await Subdomain.findOne({ subdomain: subdomain.toLowerCase() });
     if (exists) {
@@ -69,7 +81,8 @@ export const createCustomSubdomain = async (req, res) => {
     const newSubdomain = await Subdomain.create({
       userId: req.user._id,
       subdomain: subdomain.toLowerCase(),
-      isCustom: true
+      isCustom: true,
+      expiresAt: new Date(Date.now() + expiry * 60 * 1000)
     });
 
     res.status(201).json(newSubdomain);

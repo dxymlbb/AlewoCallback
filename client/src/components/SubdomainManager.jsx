@@ -8,6 +8,7 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
   const [loading, setLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState('');
+  const [expiryMinutes, setExpiryMinutes] = useState('60');
   const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'callback.local';
 
   useEffect(() => {
@@ -38,11 +39,15 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
   const createCustom = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post('/subdomains/custom', { subdomain: customName });
+      const response = await api.post('/subdomains/custom', {
+        subdomain: customName,
+        expiryMinutes: parseInt(expiryMinutes)
+      });
       setSubdomains([response.data, ...subdomains]);
       setCustomName('');
+      setExpiryMinutes('60');
       setShowCustomForm(false);
-      toast.success('Custom subdomain created!');
+      toast.success(`Custom subdomain created! Expires in ${expiryMinutes} minutes`);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create subdomain');
     }
@@ -96,27 +101,47 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
       </div>
 
       {showCustomForm && (
-        <form onSubmit={createCustom} className="mb-6 p-4 bg-gray-900/50 rounded-lg">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Custom Subdomain
-          </label>
-          <div className="flex gap-2">
+        <form onSubmit={createCustom} className="mb-6 p-4 bg-gray-900/50 rounded-lg space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Custom Subdomain
+            </label>
             <input
               type="text"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
-              className="input-field flex-1"
+              className="input-field w-full"
               placeholder="mysubdomain"
               pattern="[a-z][a-z0-9-]{2,62}"
               required
             />
-            <button type="submit" className="btn-primary">
-              Create
-            </button>
+            <p className="text-xs text-gray-500 mt-1">
+              3-63 characters, lowercase letters, numbers, and hyphens only
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            3-63 characters, lowercase letters, numbers, and hyphens only
-          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Expiry Time (minutes)
+            </label>
+            <input
+              type="number"
+              value={expiryMinutes}
+              onChange={(e) => setExpiryMinutes(e.target.value)}
+              className="input-field w-full"
+              placeholder="60"
+              min="1"
+              max="1440"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Set expiry time between 1 minute and 1440 minutes (24 hours)
+            </p>
+          </div>
+
+          <button type="submit" className="btn-primary w-full">
+            Create Custom Subdomain
+          </button>
         </form>
       )}
 

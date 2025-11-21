@@ -70,15 +70,20 @@ nslookup test.yourdomain.com YOUR_SERVER_IP
 **Random subdomain:**
 ```bash
 # In the dashboard, click "Generate Random"
-# You'll get: abc123def.yourdomain.com (expires in 10 minutes)
+# You'll get: abc123def.yourdomain.com (automatically expires in 10 minutes)
 ```
 
 **Custom subdomain:**
 ```bash
 # Click "Custom Subdomain"
-# Enter: mytest
-# You'll get: mytest.yourdomain.com (expires in 10 minutes)
+# Enter subdomain name: mytest
+# Set expiry time: 60 (minutes) - you can set between 1 and 1440 minutes (24 hours)
+# You'll get: mytest.yourdomain.com (expires in 60 minutes or your chosen time)
 ```
+
+**Note:**
+- Random subdomains always expire after 10 minutes
+- Custom subdomains let you choose expiry time (1 minute to 24 hours)
 
 ### 2. Test DNS Detection
 
@@ -265,7 +270,7 @@ If RCE exists, you'll see:
 
 ## 🔒 Security Features
 
-- **Auto-expiring subdomains**: Deleted after 10 minutes
+- **Auto-expiring subdomains**: Random subdomains deleted after 10 minutes, custom subdomains deleted based on user-defined expiry (1-1440 minutes)
 - **Auto-expiring scripts**: Deleted after 5 minutes
 - **No public registration**: Admin-only access
 - **JWT authentication**: Secure token-based auth
