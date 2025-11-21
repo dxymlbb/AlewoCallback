@@ -1019,11 +1019,10 @@ setup_ssl() {
             echo -e "${CYAN}Existing Certificate Options:${NC}"
             echo ""
             echo "  1. Use existing Let's Encrypt certificate"
-            echo "  2. Renew/Replace with new Let's Encrypt certificate (DNS Challenge)"
-            echo "  3. Replace with self-signed certificate"
+            echo "  2. Delete and create new Let's Encrypt certificate (DNS Challenge)"
             echo ""
 
-            read -p "Select option [1-3] (default: 1): " CERT_OPTION
+            read -p "Select option [1-2] (default: 1): " CERT_OPTION
             CERT_OPTION=${CERT_OPTION:-1}
 
             case $CERT_OPTION in
@@ -1033,8 +1032,8 @@ setup_ssl() {
                     return 0
                     ;;
                 2)
-                    log_warning "This will delete the existing certificate"
-                    if confirm "Continue with renewal?"; then
+                    log_warning "This will delete the existing certificate and create a new one"
+                    if confirm "Continue?"; then
                         # Delete old certificate
                         certbot delete --cert-name "$DOMAIN" --non-interactive
                         rm -rf "/etc/letsencrypt/live/$DOMAIN"
@@ -1047,14 +1046,6 @@ setup_ssl() {
                         mark_step_complete "ssl_setup"
                         return 0
                     fi
-                    ;;
-                3)
-                    # Delete Let's Encrypt and use self-signed
-                    certbot delete --cert-name "$DOMAIN" --non-interactive
-                    rm -rf "/etc/letsencrypt/live/$DOMAIN"
-                    rm -rf "/etc/letsencrypt/archive/$DOMAIN"
-                    rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
-                    setup_self_signed_ssl
                     ;;
                 *)
                     log_info "Using existing certificate"
@@ -1365,13 +1356,23 @@ EOFNGINX
         return 1
     }
 
-    # Reload Nginx
-    systemctl reload nginx || {
-        log_error "Failed to reload Nginx"
-        return 1
-    }
+    # Start or reload Nginx
+    if systemctl is-active --quiet nginx; then
+        log_info "Reloading Nginx..."
+        systemctl reload nginx || {
+            log_error "Failed to reload Nginx"
+            return 1
+        }
+    else
+        log_info "Starting Nginx..."
+        systemctl start nginx || {
+            log_error "Failed to start Nginx"
+            return 1
+        }
+        systemctl enable nginx
+    fi
 
-    log_success "Nginx configured and reloaded"
+    log_success "Nginx configured successfully"
     mark_step_complete "nginx_config"
 }
 
@@ -1383,24 +1384,28 @@ setup_pm2() {
 
     cd "$INSTALL_DIR"
 
+    # Get Node.js installation path
+    local NODE_DIR=$(dirname $(dirname $(which node 2>/dev/null || echo "/opt/node22/bin/node")))
+    local PM2_BIN="$NODE_DIR/bin/pm2"
+
     # Stop existing process if any
-    pm2 delete alewo-callback 2>/dev/null || true
+    "$PM2_BIN" delete alewo-callback 2>/dev/null || true
 
     # Start application
-    pm2 start server/index.js --name alewo-callback || {
+    "$PM2_BIN" start server/index.js --name alewo-callback || {
         log_error "Failed to start application with PM2"
         return 1
     }
 
     # Save PM2 configuration
-    pm2 save || {
+    "$PM2_BIN" save || {
         log_error "Failed to save PM2 configuration"
         return 1
     }
 
     # Setup PM2 startup
     log_info "Configuring PM2 to start on system boot..."
-    PM2_STARTUP_CMD=$(pm2 startup systemd -u root --hp /root 2>&1 | grep "sudo" | sed 's/\[PM2\] //')
+    PM2_STARTUP_CMD=$("$PM2_BIN" startup systemd -u root --hp /root 2>&1 | grep "sudo" | sed 's/\[PM2\] //')
     if [ -n "$PM2_STARTUP_CMD" ]; then
         # Extract the actual command without "sudo" prefix since we're already root
         ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed 's/^sudo //')
