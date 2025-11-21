@@ -15,9 +15,9 @@ const dnsQuerySchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  type: {
+  queryType: {
     type: String,
-    enum: ['A', 'AAAA', 'TXT', 'MX', 'CNAME', 'NS', 'SOA', 'PTR', 'ANY'],
+    enum: ['A', 'AAAA', 'TXT', 'MX', 'CNAME', 'NS', 'SOA', 'PTR', 'ANY', 'UNKNOWN'],
     default: 'A'
   },
   sourceIP: {

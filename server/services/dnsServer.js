@@ -67,7 +67,7 @@ export const startDNSServer = (io) => {
               subdomainId: subdomain._id,
               userId: subdomain.userId,
               query: name,
-              type: Packet.TYPE[type] || 'UNKNOWN',
+              queryType: Packet.TYPE[type] || 'UNKNOWN',
               sourceIP: rinfo.address,
               geolocation,
               response: serverIP,

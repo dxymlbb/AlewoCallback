@@ -311,7 +311,7 @@ const InteractionsViewer = ({ subdomain }) => {
                     ) : (
                       <>
                         <span className="px-3 py-1 rounded-lg text-sm font-semibold bg-purple-500/20 text-purple-400">
-                          {item.type}
+                          {item.queryType || 'UNKNOWN'}
                         </span>
                         <span className="font-mono text-gray-300 text-sm">{item.query}</span>
                       </>
@@ -411,8 +411,8 @@ const InteractionsViewer = ({ subdomain }) => {
                             <span className="ml-2 text-gray-300 font-mono">{item.query}</span>
                           </div>
                           <div>
-                            <span className="text-gray-500">Type:</span>
-                            <span className="ml-2 text-gray-300">{item.type}</span>
+                            <span className="text-gray-500">Query Type:</span>
+                            <span className="ml-2 text-gray-300 font-semibold">{item.queryType || 'UNKNOWN'}</span>
                           </div>
                           <div>
                             <span className="text-gray-500">Source IP:</span>
