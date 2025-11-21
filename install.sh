@@ -1391,6 +1391,50 @@ setup_pm2() {
     mark_step_complete "pm2_setup"
 }
 
+# Fix DNS port 53 conflicts
+fix_dns_port_conflict() {
+    skip_if_complete "dns_port_fix" "DNS port 53 conflict resolution" && return 0
+
+    log_step "Checking DNS Port 53 Availability"
+
+    # Check if port 53 is in use
+    if lsof -Pi :53 -sTCP:LISTEN -t >/dev/null 2>&1 || lsof -Pi :53 -sUDP -t >/dev/null 2>&1; then
+        log_warning "Port 53 is already in use"
+
+        # Check if systemd-resolved is using the port
+        if systemctl is-active --quiet systemd-resolved; then
+            log_info "systemd-resolved is using port 53"
+            log_info "Disabling systemd-resolved to free port 53..."
+
+            # Stop and disable systemd-resolved
+            systemctl stop systemd-resolved
+            systemctl disable systemd-resolved
+
+            # Setup manual DNS resolution
+            log_info "Configuring manual DNS resolution..."
+            rm -f /etc/resolv.conf
+            cat > /etc/resolv.conf <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+nameserver 1.1.1.1
+EOF
+
+            # Make it immutable to prevent systemd from overwriting
+            chattr +i /etc/resolv.conf
+
+            log_success "systemd-resolved disabled, port 53 is now available"
+        else
+            log_warning "Port 53 is in use by another service (not systemd-resolved)"
+            log_warning "You may need to manually stop the service using port 53"
+            log_info "Continuing anyway - DNS server may fail to start"
+        fi
+    else
+        log_success "Port 53 is available"
+    fi
+
+    mark_step_complete "dns_port_fix"
+}
+
 # Setup firewall
 setup_firewall() {
     skip_if_complete "firewall" "Firewall configuration" && return 0
@@ -1622,7 +1666,7 @@ EOFCONFIG
     # Install prerequisites
     if ! is_step_complete "prerequisites"; then
         log_step "Installing Prerequisites"
-        apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https software-properties-common || {
+        apt-get install -y curl wget gnupg2 ca-certificates lsb-release apt-transport-https software-properties-common lsof || {
             log_error "Failed to install prerequisites"
             log_info "Run the script again to retry from this step"
             exit 1
@@ -1699,6 +1743,11 @@ EOFCONFIG
         log_error "Nginx configuration failed - exiting"
         log_info "Run the script again to retry from this step"
         exit 1
+    }
+
+    # Fix DNS port 53 conflicts (before starting application)
+    fix_dns_port_conflict || {
+        log_warning "DNS port conflict resolution had issues - continuing"
     }
 
     # Setup PM2
