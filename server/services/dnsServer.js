@@ -1,0 +1,146 @@
+import dns2 from 'dns2';
+import Subdomain from '../models/Subdomain.js';
+import DNSQuery from '../models/DNSQuery.js';
+
+const { Packet } = dns2;
+
+// Get server IP from environment or detect
+const getServerIP = () => {
+  return process.env.SERVER_IP || '127.0.0.1';
+};
+
+// Extract subdomain from DNS query
+const extractSubdomain = (queryName, baseDomain) => {
+  if (!queryName || !baseDomain) return null;
+
+  // Remove trailing dot if exists
+  const name = queryName.endsWith('.') ? queryName.slice(0, -1) : queryName;
+  const base = baseDomain.endsWith('.') ? baseDomain.slice(0, -1) : baseDomain;
+
+  // Check if query matches base domain pattern
+  const regex = new RegExp(`^(.+)\\.${base.replace(/\./g, '\\.')}$`, 'i');
+  const match = name.match(regex);
+
+  if (match && match[1]) {
+    // Extract the first label (subdomain)
+    const parts = match[1].split('.');
+    return parts[0].toLowerCase();
+  }
+
+  return null;
+};
+
+export const startDNSServer = (io) => {
+  const baseDomain = process.env.BASE_DOMAIN || 'callback.local';
+  const serverIP = getServerIP();
+  const dnsPort = process.env.DNS_PORT || 53;
+
+  const server = dns2.createServer({
+    udp: true,
+    tcp: false,
+    handle: async (request, send, rinfo) => {
+      const response = Packet.createResponseFromRequest(request);
+      const [question] = request.questions;
+      const { name, type } = question;
+
+      console.log(`DNS Query: ${name} (${Packet.TYPE[type]}) from ${rinfo.address}`);
+
+      try {
+        // Extract subdomain from query
+        const subdomainStr = extractSubdomain(name, baseDomain);
+
+        if (subdomainStr) {
+          // Find subdomain in database
+          const subdomain = await Subdomain.findOne({
+            subdomain: subdomainStr,
+            isActive: true,
+            expiresAt: { $gt: new Date() } // Not expired
+          });
+
+          if (subdomain) {
+            // Log DNS query to database
+            const dnsQuery = await DNSQuery.create({
+              subdomainId: subdomain._id,
+              userId: subdomain.userId,
+              query: name,
+              type: Packet.TYPE[type] || 'UNKNOWN',
+              sourceIP: rinfo.address,
+              response: serverIP,
+              timestamp: new Date()
+            });
+
+            // Update subdomain last activity
+            subdomain.lastActivity = new Date();
+            await subdomain.save();
+
+            // Emit socket event for real-time update
+            if (io) {
+              io.to(`user_${subdomain.userId}`).emit('newDNSQuery', {
+                subdomainId: subdomain._id,
+                query: dnsQuery
+              });
+            }
+
+            console.log(`✓ DNS query logged for subdomain: ${subdomainStr}`);
+          }
+        }
+
+        // Always respond with A record pointing to our server
+        if (type === Packet.TYPE.A) {
+          response.answers.push({
+            name,
+            type: Packet.TYPE.A,
+            class: Packet.CLASS.IN,
+            ttl: 300,
+            address: serverIP
+          });
+        } else if (type === Packet.TYPE.AAAA) {
+          // IPv6 - return NODATA
+          response.header.rcode = Packet.RCODE.NOERROR;
+        } else if (type === Packet.TYPE.TXT) {
+          response.answers.push({
+            name,
+            type: Packet.TYPE.TXT,
+            class: Packet.CLASS.IN,
+            ttl: 300,
+            data: ['AlewoCallback DNS Server']
+          });
+        } else {
+          // For other types, return NODATA
+          response.header.rcode = Packet.RCODE.NOERROR;
+        }
+
+      } catch (error) {
+        console.error('DNS Server Error:', error);
+        response.header.rcode = Packet.RCODE.SERVFAIL;
+      }
+
+      send(response);
+    }
+  });
+
+  // Start DNS server
+  server.on('listening', () => {
+    console.log(`✓ DNS Server listening on port ${dnsPort} (UDP)`);
+    console.log(`✓ Base domain: ${baseDomain}`);
+    console.log(`✓ Server IP: ${serverIP}`);
+  });
+
+  server.on('error', (err) => {
+    console.error('✗ DNS Server Error:', err);
+    if (err.code === 'EACCES') {
+      console.error('✗ DNS requires root/sudo to bind to port 53');
+      console.error('  Run with: sudo node server/index.js');
+    }
+  });
+
+  try {
+    server.listen({
+      udp: { port: dnsPort, type: 'udp4' }
+    });
+  } catch (error) {
+    console.error('✗ Failed to start DNS server:', error);
+  }
+
+  return server;
+};

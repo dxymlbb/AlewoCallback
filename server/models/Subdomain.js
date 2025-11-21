@@ -28,11 +28,23 @@ const subdomainSchema = new mongoose.Schema({
   lastActivity: {
     type: Date,
     default: Date.now
+  },
+  expiresAt: {
+    type: Date,
+    required: true,
+    default: function() {
+      return new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+    }
+  },
+  autoDelete: {
+    type: Boolean,
+    default: true
   }
 });
 
 // Index for faster queries
 subdomainSchema.index({ userId: 1, createdAt: -1 });
 subdomainSchema.index({ subdomain: 1 });
+subdomainSchema.index({ expiresAt: 1 }); // For auto-cleanup
 
 export default mongoose.model('Subdomain', subdomainSchema);

@@ -356,6 +356,10 @@ JWT_SECRET=$JWT_SECRET
 MAIN_DOMAIN=$DOMAIN
 BASE_DOMAIN=$DOMAIN
 
+# DNS Server Configuration
+DNS_PORT=53
+SERVER_IP=$(get_public_ip)
+
 # SSL Configuration
 SSL_ENABLED=$USE_SSL
 SSL_KEY_PATH=/etc/letsencrypt/live/$DOMAIN/privkey.pem
@@ -770,9 +774,14 @@ show_completion() {
 
     if [ "$DOMAIN" != "$PUBLIC_IP" ]; then
         echo -e "${YELLOW}DNS Configuration Required:${NC}"
-        echo -e "  Add these DNS records:"
-        echo -e "  ${GREEN}A${NC}     $DOMAIN     -> $PUBLIC_IP"
-        echo -e "  ${GREEN}A${NC}     *.$DOMAIN   -> $PUBLIC_IP"
+        echo -e "  Add these DNS records at your DNS provider:"
+        echo -e "  ${GREEN}A${NC}      $DOMAIN       -> $PUBLIC_IP"
+        echo -e "  ${GREEN}A${NC}      *.$DOMAIN     -> $PUBLIC_IP"
+        echo -e "  ${GREEN}NS${NC}     $DOMAIN       -> ns1.$DOMAIN"
+        echo -e "  ${GREEN}A${NC}      ns1.$DOMAIN   -> $PUBLIC_IP"
+        echo ""
+        echo -e "  ${YELLOW}Note:${NC} DNS server is running on port 53 (UDP)"
+        echo -e "  ${YELLOW}Note:${NC} Subdomain auto-delete after 10 minutes"
         echo ""
     fi
 
