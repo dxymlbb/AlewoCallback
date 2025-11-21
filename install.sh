@@ -988,37 +988,90 @@ setup_ssl() {
             return
         fi
 
-        echo ""
-        echo -e "${CYAN}SSL Setup Options:${NC}"
-        echo ""
-        echo "  1. Let's Encrypt with DNS Challenge (Recommended for wildcard)"
-        echo "  2. Let's Encrypt with HTTP Challenge (No wildcard support)"
-        echo "  3. Self-signed Certificate (Development only)"
-        echo "  4. Skip SSL setup (Use HTTP only)"
-        echo ""
+        # Check if Let's Encrypt certificate already exists
+        if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+            log_warning "Let's Encrypt certificate already exists for $DOMAIN"
+            echo ""
+            echo -e "${CYAN}Existing Certificate Options:${NC}"
+            echo ""
+            echo "  1. Use existing Let's Encrypt certificate"
+            echo "  2. Renew/Replace with new Let's Encrypt certificate (DNS Challenge)"
+            echo "  3. Replace with self-signed certificate"
+            echo ""
 
-        read -p "Select option [1-4] (default: 1): " SSL_OPTION
-        SSL_OPTION=${SSL_OPTION:-1}
+            read -p "Select option [1-3] (default: 1): " CERT_OPTION
+            CERT_OPTION=${CERT_OPTION:-1}
 
-        case $SSL_OPTION in
-            1)
-                setup_letsencrypt_dns_challenge
-                ;;
-            2)
-                setup_letsencrypt_http_challenge
-                ;;
-            3)
-                setup_self_signed_ssl
-                ;;
-            4)
-                log_info "Skipping SSL setup"
-                USE_SSL=false
-                ;;
-            *)
-                log_warning "Invalid option, using DNS challenge..."
-                setup_letsencrypt_dns_challenge
-                ;;
-        esac
+            case $CERT_OPTION in
+                1)
+                    log_info "Using existing Let's Encrypt certificate"
+                    mark_step_complete "ssl_setup"
+                    return 0
+                    ;;
+                2)
+                    log_warning "This will delete the existing certificate"
+                    if confirm "Continue with renewal?"; then
+                        # Delete old certificate
+                        certbot delete --cert-name "$DOMAIN" --non-interactive
+                        rm -rf "/etc/letsencrypt/live/$DOMAIN"
+                        rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+                        rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
+                        log_info "Old certificate deleted"
+                        setup_letsencrypt_dns_challenge
+                    else
+                        log_info "Using existing certificate"
+                        mark_step_complete "ssl_setup"
+                        return 0
+                    fi
+                    ;;
+                3)
+                    # Delete Let's Encrypt and use self-signed
+                    certbot delete --cert-name "$DOMAIN" --non-interactive
+                    rm -rf "/etc/letsencrypt/live/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
+                    setup_self_signed_ssl
+                    ;;
+                *)
+                    log_info "Using existing certificate"
+                    mark_step_complete "ssl_setup"
+                    return 0
+                    ;;
+            esac
+        else
+            # No existing certificate, show SSL setup options
+            echo ""
+            echo -e "${CYAN}SSL Setup Options:${NC}"
+            echo ""
+            echo "  1. Let's Encrypt with DNS Challenge (Recommended for wildcard)"
+            echo "  2. Let's Encrypt with HTTP Challenge (No wildcard support)"
+            echo "  3. Self-signed Certificate (Development only)"
+            echo "  4. Skip SSL setup (Use HTTP only)"
+            echo ""
+
+            read -p "Select option [1-4] (default: 1): " SSL_OPTION
+            SSL_OPTION=${SSL_OPTION:-1}
+
+            case $SSL_OPTION in
+                1)
+                    setup_letsencrypt_dns_challenge
+                    ;;
+                2)
+                    setup_letsencrypt_http_challenge
+                    ;;
+                3)
+                    setup_self_signed_ssl
+                    ;;
+                4)
+                    log_info "Skipping SSL setup"
+                    USE_SSL=false
+                    ;;
+                *)
+                    log_warning "Invalid option, using DNS challenge..."
+                    setup_letsencrypt_dns_challenge
+                    ;;
+            esac
+        fi
     else
         log_info "Skipping SSL setup"
     fi
@@ -1193,19 +1246,29 @@ configure_nginx() {
 
     if [ "$USE_SSL" = true ]; then
         PROTOCOL="https"
-        SSL_CONFIG="
+
+        # Priority: Let's Encrypt > Self-signed
+        if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+            # Use Let's Encrypt certificate
+            SSL_CONFIG="
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 "
-        if [ -f "/etc/ssl/alewo-callback/fullchain.pem" ]; then
+            log_info "Using Let's Encrypt certificate for Nginx"
+        elif [ -f "/etc/ssl/alewo-callback/fullchain.pem" ]; then
+            # Fallback to self-signed certificate
             SSL_CONFIG="
     ssl_certificate /etc/ssl/alewo-callback/fullchain.pem;
     ssl_certificate_key /etc/ssl/alewo-callback/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 "
+            log_warning "Using self-signed certificate for Nginx"
+        else
+            log_error "No SSL certificate found!"
+            return 1
         fi
     else
         PROTOCOL="http"

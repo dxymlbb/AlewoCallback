@@ -18,18 +18,7 @@ NC='\033[0m'
 
 # Configuration
 INSTALL_DIR="/var/www/alewo-callback"
-PID_DIR="$INSTALL_DIR/.pids"
-LOG_DIR="$INSTALL_DIR/logs"
-LOCK_FILE="$INSTALL_DIR/.lock"
-
-# PID Files
-HTTP_PID_FILE="$PID_DIR/http.pid"
-MONGO_PID_FILE="$PID_DIR/mongo.pid"
-
-# Log Files
-HTTP_LOG="$LOG_DIR/http.log"
-ERROR_LOG="$LOG_DIR/error.log"
-STARTUP_LOG="$LOG_DIR/startup.log"
+APP_NAME="alewo-callback"
 
 # Load environment variables
 if [ -f "$INSTALL_DIR/.env" ]; then
@@ -40,6 +29,7 @@ fi
 HTTP_PORT=${PORT:-3000}
 DNS_PORT=${DNS_PORT:-53}
 NODE_ENV=${NODE_ENV:-production}
+BASE_DOMAIN=${BASE_DOMAIN:-localhost}
 
 #######################################
 # Logging Functions
@@ -47,22 +37,18 @@ NODE_ENV=${NODE_ENV:-production}
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
-    [ -d "$LOG_DIR" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1" >> "$STARTUP_LOG"
 }
 
 log_success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
-    [ -d "$LOG_DIR" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1" >> "$STARTUP_LOG"
 }
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
-    [ -d "$LOG_DIR" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >> "$ERROR_LOG"
 }
 
 log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
-    [ -d "$LOG_DIR" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] $1" >> "$STARTUP_LOG"
 }
 
 #######################################
@@ -85,54 +71,50 @@ show_banner() {
     echo "║                                                           ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+    echo ""
 }
 
 #######################################
-# Utility Functions
+# Helper Functions
 #######################################
 
-setup_directories() {
-    mkdir -p "$PID_DIR" "$LOG_DIR" 2>/dev/null || true
-    chmod 755 "$PID_DIR" "$LOG_DIR" 2>/dev/null || true
-}
-
-is_running() {
-    local pid_file=$1
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if ps -p "$pid" > /dev/null 2>&1; then
+# Check if PM2 process is running
+is_pm2_running() {
+    if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+        local status=$(pm2 jlist | grep -o "\"name\":\"$APP_NAME\"[^}]*\"status\":\"[^\"]*\"" | grep -o 'status":"[^"]*"' | cut -d'"' -f3)
+        if [ "$status" = "online" ]; then
             return 0
-        else
-            rm -f "$pid_file" 2>/dev/null || true
-            return 1
         fi
     fi
     return 1
 }
 
-check_port() {
-    local port=$1
-    if command -v netstat &> /dev/null; then
-        netstat -tuln | grep -q ":$port "
-    elif command -v ss &> /dev/null; then
-        ss -tuln | grep -q ":$port "
+# Get PM2 process uptime
+get_pm2_uptime() {
+    pm2 jlist | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2
+}
+
+# Format uptime
+format_uptime() {
+    local uptime_ms=$1
+    local uptime_sec=$((uptime_ms / 1000))
+    local days=$((uptime_sec / 86400))
+    local hours=$(((uptime_sec % 86400) / 3600))
+    local minutes=$(((uptime_sec % 3600) / 60))
+
+    if [ $days -gt 0 ]; then
+        echo "${days}d ${hours}h ${minutes}m"
+    elif [ $hours -gt 0 ]; then
+        echo "${hours}h ${minutes}m"
     else
-        return 1
+        echo "${minutes}m"
     fi
 }
 
-get_uptime() {
-    local pid_file=$1
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if ps -p "$pid" > /dev/null 2>&1; then
-            ps -p "$pid" -o etime= | xargs
-        else
-            echo "Not running"
-        fi
-    else
-        echo "Not running"
-    fi
+# Check if port is listening
+check_port() {
+    local port=$1
+    ss -tlnp 2>/dev/null | grep -q ":$port " && return 0 || return 1
 }
 
 #######################################
@@ -142,6 +124,7 @@ get_uptime() {
 cmd_start() {
     show_banner
     log_info "Starting AlewoCallback services..."
+    echo ""
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
@@ -149,49 +132,36 @@ cmd_start() {
         exit 1
     fi
 
-    # Setup directories
-    setup_directories
-
     # Check if already running
-    if is_running "$HTTP_PID_FILE"; then
-        log_warning "HTTP server is already running (PID: $(cat $HTTP_PID_FILE))"
+    if is_pm2_running; then
+        log_warning "Application is already running"
         echo ""
         cmd_status
         exit 0
     fi
 
-    # Check lock file
-    if [ -f "$LOCK_FILE" ]; then
-        log_warning "Lock file exists. Another instance may be starting."
-        log_info "If you're sure no other instance is running, remove: $LOCK_FILE"
-        exit 1
-    fi
-
-    # Create lock file
-    touch "$LOCK_FILE"
-
     # Check MongoDB
-    if ! systemctl is-active --quiet mongod 2>/dev/null; then
+    if ! systemctl is-active --quiet mongod 2>/dev/null && ! systemctl is-active --quiet mongodb 2>/dev/null; then
         log_info "Starting MongoDB..."
-        systemctl start mongod
+        systemctl start mongod 2>/dev/null || systemctl start mongodb 2>/dev/null
         sleep 2
     fi
 
-    # Start HTTP Server (includes DNS server)
+    # Start with PM2
     log_info "Starting HTTP/HTTPS Server on port $HTTP_PORT..."
     log_info "Starting DNS Server on port $DNS_PORT..."
+    echo ""
 
     cd "$INSTALL_DIR"
 
-    # Start server in background
-    NODE_ENV=$NODE_ENV nohup node server/index.js > "$HTTP_LOG" 2>&1 &
-    local server_pid=$!
-    echo $server_pid > "$HTTP_PID_FILE"
+    # Start application with PM2
+    pm2 start server/index.js --name "$APP_NAME" > /dev/null 2>&1
 
-    # Wait and verify
+    # Wait for startup
     sleep 3
 
-    if is_running "$HTTP_PID_FILE"; then
+    # Verify startup
+    if is_pm2_running; then
         # Health check
         local retries=0
         local max_retries=10
@@ -207,11 +177,8 @@ cmd_start() {
         done
 
         if [ "$health_ok" = true ]; then
-            log_success "HTTP/HTTPS Server started successfully (PID: $server_pid)"
-            log_success "DNS Server started successfully (embedded)"
-
-            # Remove lock file
-            rm -f "$LOCK_FILE"
+            log_success "HTTP/HTTPS Server started successfully"
+            log_success "DNS Server started successfully"
 
             echo ""
             echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
@@ -221,19 +188,20 @@ cmd_start() {
             echo -e "  ${CYAN}HTTP/HTTPS:${NC} http://localhost:$HTTP_PORT"
             echo -e "  ${CYAN}DNS Server:${NC} Port $DNS_PORT (UDP)"
             echo -e "  ${CYAN}Environment:${NC} $NODE_ENV"
-            echo -e "  ${CYAN}Base Domain:${NC} ${BASE_DOMAIN:-Not configured}"
+            echo -e "  ${CYAN}Base Domain:${NC} ${BASE_DOMAIN}"
             echo ""
-            echo -e "${YELLOW}View logs:${NC} alewo-callback logs"
-            echo -e "${YELLOW}Check status:${NC} alewo-callback status"
+            echo -e "${YELLOW}Commands:${NC}"
+            echo -e "  alewo-callback status  - Check service status"
+            echo -e "  alewo-callback logs -f - Follow logs in real-time"
             echo ""
         else
-            log_error "Health check failed. Check logs: $HTTP_LOG"
-            rm -f "$LOCK_FILE"
+            log_error "Service started but health check failed"
+            log_info "Check logs: alewo-callback logs"
             exit 1
         fi
     else
-        log_error "Failed to start server. Check logs: $HTTP_LOG"
-        rm -f "$LOCK_FILE"
+        log_error "Failed to start service"
+        log_info "Check logs: alewo-callback logs"
         exit 1
     fi
 }
@@ -245,6 +213,7 @@ cmd_start() {
 cmd_stop() {
     show_banner
     log_info "Stopping AlewoCallback services..."
+    echo ""
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
@@ -252,54 +221,33 @@ cmd_stop() {
         exit 1
     fi
 
-    local stopped_count=0
-
-    # Stop HTTP Server (includes DNS)
-    if is_running "$HTTP_PID_FILE"; then
-        local pid=$(cat "$HTTP_PID_FILE")
-        log_info "Stopping HTTP/HTTPS Server (PID: $pid)..."
-
-        # Try graceful shutdown first
-        kill -TERM "$pid" 2>/dev/null || true
-        sleep 2
-
-        # Force kill if still running
-        if ps -p "$pid" > /dev/null 2>&1; then
-            log_warning "Forcing shutdown..."
-            kill -KILL "$pid" 2>/dev/null || true
-            sleep 1
-        fi
-
-        if ! ps -p "$pid" > /dev/null 2>&1; then
-            log_success "HTTP/HTTPS Server stopped"
-            log_success "DNS Server stopped (embedded)"
-            rm -f "$HTTP_PID_FILE"
-            ((stopped_count++))
-        else
-            log_error "Failed to stop HTTP server (PID: $pid)"
-        fi
-    else
-        log_info "HTTP server is not running"
+    # Check if running
+    if ! is_pm2_running; then
+        log_info "Services are not running"
+        exit 0
     fi
 
-    # Clean up any remaining Node processes for this app
-    pkill -f "node.*server/index.js" 2>/dev/null || true
-
-    # Remove lock file
-    rm -f "$LOCK_FILE"
-
-    # Clean up stale PID files
-    rm -f "$PID_DIR"/*.pid 2>/dev/null || true
-
+    # Stop via PM2
+    log_info "Stopping HTTP/HTTPS Server..."
+    log_info "Stopping DNS Server..."
     echo ""
-    if [ $stopped_count -gt 0 ]; then
+
+    pm2 stop "$APP_NAME" > /dev/null 2>&1
+
+    # Verify stopped
+    if ! is_pm2_running; then
+        log_success "HTTP/HTTPS Server stopped"
+        log_success "DNS Server stopped"
+
+        echo ""
         echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
         echo -e "${GREEN}║                   SERVICES STOPPED                        ║${NC}"
         echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"
+        echo ""
     else
-        echo -e "${YELLOW}No services were running${NC}"
+        log_error "Failed to stop services"
+        exit 1
     fi
-    echo ""
 }
 
 #######################################
@@ -307,10 +255,37 @@ cmd_stop() {
 #######################################
 
 cmd_restart() {
+    show_banner
     log_info "Restarting AlewoCallback services..."
-    cmd_stop
-    sleep 2
-    cmd_start
+    echo ""
+
+    # Check if running as root
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This command must be run as root (use sudo)"
+        exit 1
+    fi
+
+    # Restart via PM2
+    if is_pm2_running; then
+        log_info "Restarting HTTP/HTTPS Server..."
+        log_info "Restarting DNS Server..."
+        echo ""
+
+        pm2 restart "$APP_NAME" > /dev/null 2>&1
+        sleep 2
+
+        if is_pm2_running; then
+            log_success "Services restarted successfully"
+            echo ""
+            cmd_status
+        else
+            log_error "Failed to restart services"
+            exit 1
+        fi
+    else
+        log_warning "Services are not running. Starting instead..."
+        cmd_start
+    fi
 }
 
 #######################################
@@ -327,19 +302,18 @@ cmd_status() {
 
     # HTTP/HTTPS Server Status
     echo -e "${YELLOW}HTTP/HTTPS Server:${NC}"
-    if is_running "$HTTP_PID_FILE"; then
-        local pid=$(cat "$HTTP_PID_FILE")
-        local uptime=$(get_uptime "$HTTP_PID_FILE")
+    if is_pm2_running; then
+        local uptime_ms=$(get_pm2_uptime)
+        local uptime=$(format_uptime $uptime_ms)
+
         echo -e "  Status: ${GREEN}● Running${NC}"
-        echo -e "  PID: $pid"
         echo -e "  Uptime: $uptime"
         echo -e "  Port: $HTTP_PORT"
 
-        # Check if port is actually listening
         if check_port "$HTTP_PORT"; then
-            echo -e "  Port Check: ${GREEN}✓ Listening${NC}"
+            echo -e "  Listening: ${GREEN}✓${NC}"
         else
-            echo -e "  Port Check: ${RED}✗ Not listening${NC}"
+            echo -e "  Listening: ${RED}✗${NC}"
         fi
     else
         echo -e "  Status: ${RED}● Stopped${NC}"
@@ -347,17 +321,11 @@ cmd_status() {
 
     echo ""
 
-    # DNS Server Status (embedded with HTTP)
+    # DNS Server Status
     echo -e "${YELLOW}DNS Server:${NC}"
-    if is_running "$HTTP_PID_FILE"; then
-        echo -e "  Status: ${GREEN}● Running${NC} (embedded)"
+    if is_pm2_running && check_port "$DNS_PORT"; then
+        echo -e "  Status: ${GREEN}● Running${NC}"
         echo -e "  Port: $DNS_PORT (UDP)"
-
-        if check_port "$DNS_PORT"; then
-            echo -e "  Port Check: ${GREEN}✓ Listening${NC}"
-        else
-            echo -e "  Port Check: ${YELLOW}⚠ Cannot verify UDP${NC}"
-        fi
     else
         echo -e "  Status: ${RED}● Stopped${NC}"
     fi
@@ -366,7 +334,7 @@ cmd_status() {
 
     # MongoDB Status
     echo -e "${YELLOW}MongoDB:${NC}"
-    if systemctl is-active --quiet mongod 2>/dev/null; then
+    if systemctl is-active --quiet mongod 2>/dev/null || systemctl is-active --quiet mongodb 2>/dev/null; then
         echo -e "  Status: ${GREEN}● Running${NC}"
     else
         echo -e "  Status: ${RED}● Stopped${NC}"
@@ -379,35 +347,15 @@ cmd_status() {
     echo -e "${CYAN}║                   CONFIGURATION                           ║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${YELLOW}Environment:${NC} ${NODE_ENV:-Not set}"
-    echo -e "  ${YELLOW}HTTP Port:${NC} ${HTTP_PORT:-Not set}"
-    echo -e "  ${YELLOW}DNS Port:${NC} ${DNS_PORT:-Not set}"
-    echo -e "  ${YELLOW}Base Domain:${NC} ${BASE_DOMAIN:-Not set}"
-    echo -e "  ${YELLOW}SSL Enabled:${NC} ${SSL_ENABLED:-false}"
-    echo -e "  ${YELLOW}Install Dir:${NC} $INSTALL_DIR"
+
+    echo -e "  Environment: ${NODE_ENV}"
+    echo -e "  HTTP Port: ${HTTP_PORT}"
+    echo -e "  DNS Port: ${DNS_PORT}"
+    echo -e "  Base Domain: ${BASE_DOMAIN}"
+    echo -e "  SSL Enabled: ${SSL_ENABLED:-false}"
+    echo -e "  Install Dir: ${INSTALL_DIR}"
 
     echo ""
-
-    # Quick stats
-    if is_running "$HTTP_PID_FILE"; then
-        echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║                   QUICK STATS                             ║${NC}"
-        echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-
-        # Log sizes
-        if [ -f "$HTTP_LOG" ]; then
-            local log_size=$(du -h "$HTTP_LOG" 2>/dev/null | cut -f1)
-            echo -e "  ${YELLOW}HTTP Log Size:${NC} $log_size"
-        fi
-
-        if [ -f "$ERROR_LOG" ]; then
-            local error_size=$(du -h "$ERROR_LOG" 2>/dev/null | cut -f1)
-            echo -e "  ${YELLOW}Error Log Size:${NC} $error_size"
-        fi
-
-        echo ""
-    fi
 }
 
 #######################################
@@ -417,26 +365,22 @@ cmd_status() {
 cmd_logs() {
     local follow=false
     local lines=50
-    local log_type="http"
+    local error_only=false
 
-    # Parse options
+    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             -f|--follow)
                 follow=true
                 shift
                 ;;
+            -e|--error)
+                error_only=true
+                shift
+                ;;
             -n|--lines)
                 lines="$2"
                 shift 2
-                ;;
-            --error)
-                log_type="error"
-                shift
-                ;;
-            --startup)
-                log_type="startup"
-                shift
                 ;;
             *)
                 shift
@@ -444,36 +388,13 @@ cmd_logs() {
         esac
     done
 
-    # Select log file
-    case $log_type in
-        error)
-            local log_file="$ERROR_LOG"
-            local log_name="Error Log"
-            ;;
-        startup)
-            local log_file="$STARTUP_LOG"
-            local log_name="Startup Log"
-            ;;
-        *)
-            local log_file="$HTTP_LOG"
-            local log_name="HTTP Server Log"
-            ;;
-    esac
-
-    if [ ! -f "$log_file" ]; then
-        log_error "Log file not found: $log_file"
-        exit 1
-    fi
-
-    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║  $log_name${NC}"
-    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-
+    # Show logs via PM2
     if [ "$follow" = true ]; then
-        tail -f -n "$lines" "$log_file"
+        pm2 logs "$APP_NAME" --lines "$lines"
+    elif [ "$error_only" = true ]; then
+        pm2 logs "$APP_NAME" --err --lines "$lines" --nostream
     else
-        tail -n "$lines" "$log_file"
+        pm2 logs "$APP_NAME" --lines "$lines" --nostream
     fi
 }
 
@@ -481,29 +402,22 @@ cmd_logs() {
 # UNINSTALL Command
 #######################################
 
-confirm() {
-    local prompt_text=$1
-    read -p "$(echo -e ${YELLOW}$prompt_text ${NC}[y/N]: )" -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 cmd_uninstall() {
     clear
     echo -e "${RED}"
     echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║                                                           ║"
     echo "║              ALEWO CALLBACK UNINSTALLER                  ║"
-    echo "║                                                           ║"
     echo "║              ⚠️  THIS WILL REMOVE ALL DATA  ⚠️            ║"
-    echo "║                                                           ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+
+    read -p "$(echo -e ${YELLOW}Are you sure you want to continue? ${NC}[y/N]: )" -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Uninstallation cancelled"
+        exit 0
+    fi
 
     # Check if running as root
     if [[ $EUID -ne 0 ]]; then
@@ -511,110 +425,27 @@ cmd_uninstall() {
         exit 1
     fi
 
-    log_warning "This will completely remove AlewoCallback from your system!"
-    echo ""
+    log_info "Stopping services..."
+    pm2 delete "$APP_NAME" 2>/dev/null || true
+    pm2 kill 2>/dev/null || true
 
-    if ! confirm "Are you sure you want to continue?"; then
-        log_info "Uninstallation cancelled"
-        exit 0
-    fi
+    log_info "Removing systemd services..."
+    systemctl stop pm2-root 2>/dev/null || true
+    systemctl disable pm2-root 2>/dev/null || true
+    rm -f /etc/systemd/system/pm2-root.service
 
-    # Create backup
-    if confirm "Do you want to create a backup before uninstalling?"; then
-        local BACKUP_DIR="/root/alewo-backup-$(date +%Y%m%d-%H%M%S)"
-        mkdir -p "$BACKUP_DIR"
-
-        log_info "Creating backup at: $BACKUP_DIR"
-
-        # Backup application files
-        if [ -d "$INSTALL_DIR" ]; then
-            cp -r "$INSTALL_DIR" "$BACKUP_DIR/" 2>/dev/null || true
-        fi
-
-        # Backup MongoDB
-        if command -v mongodump &> /dev/null; then
-            mongodump --db alewo-callback --out "$BACKUP_DIR/mongodb" 2>/dev/null || true
-        fi
-
-        # Backup Nginx config
-        if [ -f /etc/nginx/sites-available/alewo-callback ]; then
-            cp /etc/nginx/sites-available/alewo-callback "$BACKUP_DIR/" 2>/dev/null || true
-        fi
-
-        log_success "Backup created at: $BACKUP_DIR"
-    fi
-
-    # Stop application
-    log_info "Stopping application..."
-    cmd_stop > /dev/null 2>&1 || true
-
-    # Remove Nginx configuration
-    log_info "Removing Nginx configuration..."
-    if [ -f /etc/nginx/sites-enabled/alewo-callback ]; then
-        rm -f /etc/nginx/sites-enabled/alewo-callback
-    fi
-    if [ -f /etc/nginx/sites-available/alewo-callback ]; then
-        rm -f /etc/nginx/sites-available/alewo-callback
-    fi
-    if command -v nginx &> /dev/null; then
-        nginx -t > /dev/null 2>&1 && systemctl reload nginx || true
-    fi
-    log_success "Nginx configuration removed"
-
-    # Remove application files
     log_info "Removing application files..."
-    if [ -d "$INSTALL_DIR" ]; then
-        rm -rf "$INSTALL_DIR"
-        log_success "Application files removed from $INSTALL_DIR"
-    fi
+    rm -rf "$INSTALL_DIR"
 
-    # Remove SSL certificates
-    if confirm "Do you want to remove SSL certificates?"; then
-        if [ -d "/etc/ssl/alewo-callback" ]; then
-            rm -rf /etc/ssl/alewo-callback
-            log_info "Removed self-signed SSL certificates"
-        fi
-        log_warning "Let's Encrypt certificates kept for safety"
-        log_warning "Remove manually if needed: certbot delete --cert-name <domain>"
-    fi
+    log_info "Removing management command..."
+    rm -f /usr/local/bin/alewo-callback
 
-    # Remove database
-    if confirm "Do you want to remove the MongoDB database? (THIS WILL DELETE ALL DATA)"; then
-        if command -v mongosh &> /dev/null; then
-            mongosh --eval "db.getSiblingDB('alewo-callback').dropDatabase()" 2>/dev/null || true
-            log_success "Database removed"
-        elif command -v mongo &> /dev/null; then
-            mongo --eval "db.getSiblingDB('alewo-callback').dropDatabase()" 2>/dev/null || true
-            log_success "Database removed"
-        else
-            log_warning "MongoDB client not found, skipping database removal"
-        fi
-    fi
+    log_info "Removing Nginx configuration..."
+    rm -f /etc/nginx/sites-enabled/alewo-callback
+    rm -f /etc/nginx/sites-available/alewo-callback
+    systemctl reload nginx 2>/dev/null || true
 
-    # Remove this command itself
-    log_info "Removing alewo-callback command..."
-    if [ -f "/usr/local/bin/alewo-callback" ]; then
-        rm -f /usr/local/bin/alewo-callback
-        log_success "Command removed from /usr/local/bin/"
-    fi
-
-    # Completion message
-    echo ""
-    echo -e "${GREEN}"
-    echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║                                                           ║"
-    echo "║        ALEWO CALLBACK HAS BEEN UNINSTALLED                ║"
-    echo "║                                                           ║"
-    echo "╚═══════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-    echo ""
-    echo -e "${CYAN}The following have been removed:${NC}"
-    echo -e "  ✓ Application files"
-    echo -e "  ✓ Nginx configuration"
-    echo -e "  ✓ Application processes"
-    echo -e "  ✓ alewo-callback command"
-    echo ""
-    echo -e "${YELLOW}Thank you for using AlewoCallback!${NC}"
+    log_success "AlewoCallback has been uninstalled"
     echo ""
 }
 
@@ -626,84 +457,62 @@ cmd_help() {
     show_banner
 
     echo -e "${CYAN}USAGE:${NC}"
-    echo -e "  alewo-callback ${YELLOW}<command>${NC} [options]"
+    echo -e "  alewo-callback [COMMAND] [OPTIONS]"
     echo ""
-
     echo -e "${CYAN}COMMANDS:${NC}"
-    echo -e "  ${GREEN}start${NC}                Start all services (HTTP, DNS, MongoDB)"
-    echo -e "  ${GREEN}stop${NC}                 Stop all services"
-    echo -e "  ${GREEN}restart${NC}              Restart all services"
-    echo -e "  ${GREEN}status${NC}               Show service status and configuration"
-    echo -e "  ${GREEN}logs${NC}                 Show service logs"
-    echo -e "  ${GREEN}uninstall${NC}            Completely remove AlewoCallback from system"
-    echo -e "  ${GREEN}help${NC}                 Show this help message"
+    echo -e "  ${GREEN}start${NC}      Start all services (requires sudo)"
+    echo -e "  ${GREEN}stop${NC}       Stop all services (requires sudo)"
+    echo -e "  ${GREEN}restart${NC}    Restart all services (requires sudo)"
+    echo -e "  ${GREEN}status${NC}     Show service status"
+    echo -e "  ${GREEN}logs${NC}       View application logs"
+    echo -e "  ${GREEN}uninstall${NC}  Remove AlewoCallback (requires sudo)"
+    echo -e "  ${GREEN}help${NC}       Show this help message"
     echo ""
-
     echo -e "${CYAN}LOG OPTIONS:${NC}"
-    echo -e "  alewo-callback logs ${YELLOW}[-f|--follow]${NC}      Follow log output"
-    echo -e "  alewo-callback logs ${YELLOW}[-n|--lines N]${NC}     Show last N lines (default: 50)"
-    echo -e "  alewo-callback logs ${YELLOW}[--error]${NC}          Show error log"
-    echo -e "  alewo-callback logs ${YELLOW}[--startup]${NC}        Show startup log"
+    echo -e "  ${YELLOW}-f, --follow${NC}     Follow log output in real-time"
+    echo -e "  ${YELLOW}-e, --error${NC}      Show only error logs"
+    echo -e "  ${YELLOW}-n, --lines N${NC}    Show last N lines (default: 50)"
     echo ""
-
     echo -e "${CYAN}EXAMPLES:${NC}"
-    echo -e "  sudo alewo-callback start              # Start all services"
-    echo -e "  sudo alewo-callback stop               # Stop all services"
-    echo -e "  sudo alewo-callback restart            # Restart services"
-    echo -e "  alewo-callback status                  # Check status (no sudo needed)"
-    echo -e "  alewo-callback logs -f                 # Follow live logs"
-    echo -e "  alewo-callback logs --error -n 100     # Show last 100 error lines"
-    echo -e "  sudo alewo-callback uninstall          # Remove AlewoCallback completely"
-    echo ""
-
-    echo -e "${CYAN}NOTES:${NC}"
-    echo -e "  • ${YELLOW}start/stop/restart/uninstall${NC} commands require sudo/root"
-    echo -e "  • ${YELLOW}status/logs${NC} commands can run without root"
-    echo -e "  • ${YELLOW}uninstall${NC} will prompt for backup and confirmation before removal"
-    echo -e "  • DNS server runs on port 53 (embedded with HTTP server)"
-    echo -e "  • Logs are stored in: $LOG_DIR"
-    echo -e "  • PID files are in: $PID_DIR"
+    echo -e "  sudo alewo-callback start"
+    echo -e "  alewo-callback status"
+    echo -e "  alewo-callback logs -f"
+    echo -e "  alewo-callback logs --error --lines 100"
     echo ""
 }
 
 #######################################
-# MAIN
+# Main
 #######################################
 
-main() {
-    local command="${1:-help}"
-
-    case "$command" in
-        start)
-            cmd_start
-            ;;
-        stop)
-            cmd_stop
-            ;;
-        restart)
-            cmd_restart
-            ;;
-        status)
-            cmd_status
-            ;;
-        logs)
-            shift
-            cmd_logs "$@"
-            ;;
-        uninstall)
-            cmd_uninstall
-            ;;
-        help|--help|-h)
-            cmd_help
-            ;;
-        *)
-            echo -e "${RED}Error: Unknown command '$command'${NC}"
-            echo ""
-            echo "Run 'alewo-callback help' for usage information"
-            exit 1
-            ;;
-    esac
-}
-
-# Run main
-main "$@"
+# Parse command
+case "${1:-help}" in
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        shift
+        cmd_logs "$@"
+        ;;
+    uninstall)
+        cmd_uninstall
+        ;;
+    help|--help|-h)
+        cmd_help
+        ;;
+    *)
+        log_error "Unknown command: $1"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac
