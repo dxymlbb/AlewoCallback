@@ -8,6 +8,8 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import { connectDatabase } from './config/database.js';
 import { startCleanupService } from './utils/cleanupService.js';
+import { startSubdomainCleanup } from './utils/subdomainCleanupService.js';
+import { startDNSServer } from './services/dnsServer.js';
 import { captureCallback } from './middleware/callbackHandler.js';
 import jwt from 'jsonwebtoken';
 
@@ -16,6 +18,7 @@ import authRoutes from './routes/auth.js';
 import subdomainRoutes from './routes/subdomains.js';
 import callbackRoutes from './routes/callbacks.js';
 import scriptRoutes from './routes/scripts.js';
+import interactionRoutes from './routes/interactions.js';
 
 // Load environment variables
 dotenv.config();
@@ -36,8 +39,9 @@ app.set('io', io);
 // Connect to database
 connectDatabase();
 
-// Start cleanup service
+// Start cleanup services
 startCleanupService();
+startSubdomainCleanup();
 
 // Middleware
 app.use(helmet({
@@ -108,6 +112,7 @@ app.use('/api/auth', apiLimiter, authRoutes);
 app.use('/api/subdomains', apiLimiter, subdomainRoutes);
 app.use('/api/callbacks', apiLimiter, callbackRoutes);
 app.use('/api/scripts', apiLimiter, scriptRoutes);
+app.use('/api/interactions', apiLimiter, interactionRoutes);
 
 // Serve static files from React app (production)
 if (process.env.NODE_ENV === 'production') {
@@ -134,11 +139,15 @@ httpServer.listen(PORT, () => {
   console.log('\n========================================');
   console.log(`🚀 AlewoCallback Server Running`);
   console.log(`========================================`);
-  console.log(`Port: ${PORT}`);
+  console.log(`HTTP Port: ${PORT}`);
+  console.log(`DNS Port: ${process.env.DNS_PORT || 53}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Base Domain: ${process.env.BASE_DOMAIN || 'callback.local'}`);
   console.log(`SSL Enabled: ${process.env.SSL_ENABLED || 'false'}`);
   console.log(`========================================\n`);
+
+  // Start DNS Server after HTTP server is ready
+  startDNSServer(io);
 });
 
 export default app;

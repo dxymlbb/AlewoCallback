@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LogOut, User, Shield } from 'lucide-react';
 import SubdomainManager from '../components/SubdomainManager';
-import CallbackViewer from '../components/CallbackViewer';
+import InteractionsViewer from '../components/InteractionsViewer';
 import ScriptGenerator from '../components/ScriptGenerator';
 import socketService from '../services/socket';
 
@@ -72,7 +72,7 @@ const Dashboard = () => {
 
           {/* Right Column */}
           <div className="space-y-6">
-            <CallbackViewer subdomain={selectedSubdomain} />
+            <InteractionsViewer subdomain={selectedSubdomain} />
           </div>
         </div>
       </main>

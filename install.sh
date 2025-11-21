@@ -356,6 +356,10 @@ JWT_SECRET=$JWT_SECRET
 MAIN_DOMAIN=$DOMAIN
 BASE_DOMAIN=$DOMAIN
 
+# DNS Server Configuration
+DNS_PORT=53
+SERVER_IP=$(get_public_ip)
+
 # SSL Configuration
 SSL_ENABLED=$USE_SSL
 SSL_KEY_PATH=/etc/letsencrypt/live/$DOMAIN/privkey.pem
@@ -456,48 +460,502 @@ EOFSCRIPT
     log_success "Administrator account created"
 }
 
-# Setup SSL
+# Dynamic DNS Provider Detection
+detect_dns_provider() {
+    local DOMAIN_TO_CHECK="$1"
+    local NAMESERVERS=$(dig +short NS "$DOMAIN_TO_CHECK" @8.8.8.8 2>/dev/null | head -n3)
+
+    if [ -z "$NAMESERVERS" ]; then
+        echo "unknown"
+        return
+    fi
+
+    # Check various providers
+    if echo "$NAMESERVERS" | grep -qi "cloudflare\|ns.*cloudflare"; then
+        echo "cloudflare"
+    elif echo "$NAMESERVERS" | grep -qi "hostinger\|idwebhost"; then
+        echo "hostinger"
+    elif echo "$NAMESERVERS" | grep -qi "namecheap"; then
+        echo "namecheap"
+    elif echo "$NAMESERVERS" | grep -qi "godaddy"; then
+        echo "godaddy"
+    elif echo "$NAMESERVERS" | grep -qi "google\|ns-cloud"; then
+        echo "google"
+    elif echo "$NAMESERVERS" | grep -qi "digitalocean"; then
+        echo "digitalocean"
+    elif echo "$NAMESERVERS" | grep -qi "linode\|akamai"; then
+        echo "linode"
+    elif echo "$NAMESERVERS" | grep -qi "route53\|awsdns"; then
+        echo "aws"
+    elif echo "$NAMESERVERS" | grep -qi "azure"; then
+        echo "azure"
+    elif echo "$NAMESERVERS" | grep -qi "ovh"; then
+        echo "ovh"
+    elif echo "$NAMESERVERS" | grep -qi "ionos\|1and1"; then
+        echo "ionos"
+    elif echo "$NAMESERVERS" | grep -qi "hover"; then
+        echo "hover"
+    elif echo "$NAMESERVERS" | grep -qi "porkbun"; then
+        echo "porkbun"
+    elif echo "$NAMESERVERS" | grep -qi "namesilo"; then
+        echo "namesilo"
+    else
+        echo "other"
+    fi
+}
+
+# Get provider-specific DNS management URL
+get_provider_dns_url() {
+    local PROVIDER="$1"
+    local DOMAIN="$2"
+
+    case "$PROVIDER" in
+        cloudflare)
+            echo "https://dash.cloudflare.com/"
+            ;;
+        hostinger)
+            echo "https://hpanel.hostinger.com/domain/$DOMAIN/dns"
+            ;;
+        namecheap)
+            echo "https://ap.www.namecheap.com/domains/dns/default/$DOMAIN"
+            ;;
+        godaddy)
+            echo "https://dcc.godaddy.com/manage/$DOMAIN/dns"
+            ;;
+        google)
+            echo "https://domains.google.com/registrar/$DOMAIN/dns"
+            ;;
+        digitalocean)
+            echo "https://cloud.digitalocean.com/networking/domains/$DOMAIN"
+            ;;
+        linode)
+            echo "https://cloud.linode.com/domains/$DOMAIN"
+            ;;
+        aws)
+            echo "https://console.aws.amazon.com/route53/v2/hostedzones"
+            ;;
+        azure)
+            echo "https://portal.azure.com/#blade/HubsExtension/BrowseResource/resourceType/Microsoft.Network%2FdnsZones"
+            ;;
+        ovh)
+            echo "https://www.ovh.com/manager/web/#/configuration/domain/$DOMAIN/zone"
+            ;;
+        ionos)
+            echo "https://my.ionos.com/domains/$DOMAIN/dns"
+            ;;
+        hover)
+            echo "https://www.hover.com/domains/$DOMAIN/dns"
+            ;;
+        porkbun)
+            echo "https://porkbun.com/account/domainsSpeedy"
+            ;;
+        namesilo)
+            echo "https://www.namesilo.com/account_domains.php"
+            ;;
+        *)
+            echo "https://www.google.com/search?q=how+to+add+dns+record+$PROVIDER"
+            ;;
+    esac
+}
+
+# Get provider display name
+get_provider_name() {
+    local PROVIDER="$1"
+
+    case "$PROVIDER" in
+        cloudflare) echo "Cloudflare" ;;
+        hostinger) echo "Hostinger" ;;
+        namecheap) echo "Namecheap" ;;
+        godaddy) echo "GoDaddy" ;;
+        google) echo "Google Domains" ;;
+        digitalocean) echo "DigitalOcean" ;;
+        linode) echo "Linode/Akamai" ;;
+        aws) echo "AWS Route53" ;;
+        azure) echo "Azure DNS" ;;
+        ovh) echo "OVH" ;;
+        ionos) echo "IONOS" ;;
+        hover) echo "Hover" ;;
+        porkbun) echo "Porkbun" ;;
+        namesilo) echo "NameSilo" ;;
+        other) echo "Your DNS Provider" ;;
+        unknown) echo "Unknown Provider" ;;
+        *) echo "$PROVIDER" ;;
+    esac
+}
+
+# Show DNS configuration guide
+show_dns_configuration_guide() {
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                                                           ║${NC}"
+    echo -e "${CYAN}║              DNS CONFIGURATION REQUIRED                   ║${NC}"
+    echo -e "${CYAN}║                                                           ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}Please add these DNS records to your domain:${NC}"
+    echo ""
+    echo "┌───────────────────────────────────────────────────────────────┐"
+    printf "│  ${GREEN}%-6s${NC}  %-25s  %-25s │\n" "Type" "Name" "Value"
+    echo "├───────────────────────────────────────────────────────────────┤"
+    printf "│  ${GREEN}%-6s${NC}  %-25s  %-25s │\n" "A" "$DOMAIN" "$PUBLIC_IP"
+    printf "│  ${GREEN}%-6s${NC}  %-25s  %-25s │\n" "A" "*.$DOMAIN" "$PUBLIC_IP"
+    printf "│  ${GREEN}%-6s${NC}  %-25s  %-25s │\n" "NS" "$DOMAIN" "ns1.$DOMAIN"
+    printf "│  ${GREEN}%-6s${NC}  %-25s  %-25s │\n" "A" "ns1.$DOMAIN" "$PUBLIC_IP"
+    echo "└───────────────────────────────────────────────────────────────┘"
+    echo ""
+
+    # Detect and show provider
+    DNS_PROVIDER=$(detect_dns_provider "$DOMAIN")
+    PROVIDER_NAME=$(get_provider_name "$DNS_PROVIDER")
+    PROVIDER_URL=$(get_provider_dns_url "$DNS_PROVIDER" "$DOMAIN")
+
+    echo -e "${CYAN}Your DNS Provider:${NC} ${GREEN}$PROVIDER_NAME${NC}"
+    echo -e "${CYAN}DNS Management URL:${NC} ${BLUE}$PROVIDER_URL${NC}"
+    echo ""
+
+    echo -e "${YELLOW}Important Notes:${NC}"
+    echo "  • DNS propagation can take 5-30 minutes"
+    echo "  • Wildcard record (*.$DOMAIN) is required for callback subdomains"
+    echo "  • NS record is optional but recommended for custom DNS server"
+    echo ""
+    echo -e "${CYAN}Verify DNS propagation:${NC}"
+    echo "  dig $DOMAIN @8.8.8.8"
+    echo "  dig test.$DOMAIN @8.8.8.8"
+    echo "  Online: https://dnschecker.org"
+    echo ""
+}
+
+# Check DNS records
+check_dns_records() {
+    local DOMAIN_TO_CHECK="$1"
+    local EXPECTED_IP="$2"
+    local DNS_READY=true
+
+    echo ""
+    log_info "Verifying DNS configuration..."
+    echo ""
+
+    # Check A record for main domain
+    echo -ne "  Checking A record for $DOMAIN_TO_CHECK... "
+    A_RECORD=$(dig +short "$DOMAIN_TO_CHECK" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+    if [ "$A_RECORD" == "$EXPECTED_IP" ]; then
+        echo -e "${GREEN}✓${NC} ($A_RECORD)"
+    else
+        echo -e "${RED}✗${NC}"
+        echo -e "    Expected: ${GREEN}$EXPECTED_IP${NC}"
+        echo -e "    Got: ${YELLOW}${A_RECORD:-Not found}${NC}"
+        DNS_READY=false
+    fi
+
+    # Check wildcard A record
+    echo -ne "  Checking wildcard A record for *.$DOMAIN_TO_CHECK... "
+    TEST_SUBDOMAIN="test-$(date +%s).$DOMAIN_TO_CHECK"
+    WILDCARD_RECORD=$(dig +short "$TEST_SUBDOMAIN" @8.8.8.8 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+    if [ "$WILDCARD_RECORD" == "$EXPECTED_IP" ]; then
+        echo -e "${GREEN}✓${NC} ($WILDCARD_RECORD)"
+    else
+        echo -e "${RED}✗${NC}"
+        echo -e "    Expected: ${GREEN}$EXPECTED_IP${NC}"
+        echo -e "    Got: ${YELLOW}${WILDCARD_RECORD:-Not found}${NC}"
+        DNS_READY=false
+    fi
+
+    # Check NS record (optional)
+    echo -ne "  Checking NS record for $DOMAIN_TO_CHECK... "
+    NS_RECORD=$(dig +short NS "$DOMAIN_TO_CHECK" @8.8.8.8 2>/dev/null | head -n1)
+    if [ -n "$NS_RECORD" ]; then
+        echo -e "${GREEN}✓${NC} (${NS_RECORD%.})"
+    else
+        echo -e "${YELLOW}⚠${NC} (Optional, not configured)"
+    fi
+
+    echo ""
+
+    if [ "$DNS_READY" = false ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Verify TXT record propagation
+verify_txt_record() {
+    local TXT_NAME="$1"
+    local TXT_VALUE="$2"
+    local MAX_ATTEMPTS=12
+    local ATTEMPT=0
+
+    echo ""
+    log_info "Verifying DNS TXT record propagation..."
+    echo ""
+
+    while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+
+        # Check multiple DNS servers
+        local DNS_SERVERS=("8.8.8.8" "1.1.1.1" "208.67.222.222")
+        local SUCCESS_COUNT=0
+
+        for DNS_SERVER in "${DNS_SERVERS[@]}"; do
+            TXT_RESULT=$(dig +short TXT "$TXT_NAME" @$DNS_SERVER 2>/dev/null | tr -d '"' | head -n1)
+
+            if [ "$TXT_RESULT" == "$TXT_VALUE" ]; then
+                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            fi
+        done
+
+        # Progress indicator
+        local PROGRESS_BAR=""
+        for i in $(seq 1 $SUCCESS_COUNT); do
+            PROGRESS_BAR="${PROGRESS_BAR}█"
+        done
+        for i in $(seq $((SUCCESS_COUNT + 1)) 3); do
+            PROGRESS_BAR="${PROGRESS_BAR}░"
+        done
+
+        echo -ne "\r  Attempt $ATTEMPT/$MAX_ATTEMPTS - Verified on $SUCCESS_COUNT/3 DNS servers [$PROGRESS_BAR]"
+
+        if [ $SUCCESS_COUNT -eq 3 ]; then
+            echo ""
+            echo ""
+            log_success "TXT record verified on all DNS servers!"
+            return 0
+        fi
+
+        if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+            sleep 10
+        fi
+    done
+
+    echo ""
+    echo ""
+    log_warning "DNS propagation taking longer than expected"
+
+    if confirm "Continue anyway? (Not recommended)"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Show TXT record instruction
+show_txt_record_instruction() {
+    local TXT_NAME="$1"
+    local TXT_VALUE="$2"
+    local ATTEMPT="$3"
+
+    clear
+    echo -e "${CYAN}"
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║                                                               ║"
+    echo "║           DNS TXT RECORD VERIFICATION REQUIRED                ║"
+    echo "║                                                               ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    if [ "$ATTEMPT" -gt 1 ]; then
+        echo -e "${YELLOW}⚠ Attempt $ATTEMPT - Previous verification failed${NC}\n"
+    fi
+
+    echo -e "${CYAN}Please add the following TXT record to your DNS:${NC}\n"
+
+    echo "┌─────────────────────────────────────────────────────────────┐"
+    echo "│                                                             │"
+    echo -e "│  ${GREEN}Record Type:${NC}  TXT                                        │"
+    echo -e "│  ${GREEN}Name/Host:${NC}    ${YELLOW}$TXT_NAME${NC}"
+    echo -e "│  ${GREEN}Value:${NC}        ${YELLOW}$TXT_VALUE${NC}"
+    echo -e "│  ${GREEN}TTL:${NC}          300 (5 minutes) or Auto                  │"
+    echo "│                                                             │"
+    echo "└─────────────────────────────────────────────────────────────┘"
+
+    echo ""
+
+    # Detect and show provider info
+    DNS_PROVIDER=$(detect_dns_provider "$DOMAIN")
+    PROVIDER_NAME=$(get_provider_name "$DNS_PROVIDER")
+    PROVIDER_URL=$(get_provider_dns_url "$DNS_PROVIDER" "$DOMAIN")
+
+    echo -e "${CYAN}Your DNS Provider:${NC} ${GREEN}$PROVIDER_NAME${NC}"
+    echo -e "${CYAN}DNS Management:${NC} ${BLUE}$PROVIDER_URL${NC}"
+
+    echo ""
+    echo -e "${YELLOW}Steps:${NC}"
+    echo "  1. Open your DNS management panel using the link above"
+    echo "  2. Add a new TXT record with the details shown"
+    echo "  3. Wait 2-5 minutes for DNS propagation"
+    echo "  4. Press ENTER to verify"
+    echo ""
+
+    echo -e "${CYAN}Need help?${NC}"
+    echo "  • Check DNS propagation: https://dnschecker.org/#TXT/$TXT_NAME"
+    echo "  • Manual check: dig TXT $TXT_NAME @8.8.8.8"
+    echo ""
+}
+
+# Setup SSL with interactive options
 setup_ssl() {
     if [ "$USE_SSL" = true ]; then
-        log_step "Setting Up SSL Certificate"
+        log_step "SSL Certificate Setup"
 
+        # Check if it's IP address
         if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            log_warning "Cannot setup SSL for IP address. Using self-signed certificate..."
+            log_warning "SSL cannot be used with IP address"
             setup_self_signed_ssl
-        else
-            if confirm "Setup Let's Encrypt SSL certificate? (Requires DNS configured)"; then
-                setup_letsencrypt_ssl
-            else
-                log_info "Setting up self-signed certificate..."
-                setup_self_signed_ssl
-            fi
+            return
         fi
+
+        echo ""
+        echo -e "${CYAN}SSL Setup Options:${NC}"
+        echo ""
+        echo "  1. Let's Encrypt with DNS Challenge (Recommended for wildcard)"
+        echo "  2. Let's Encrypt with HTTP Challenge (No wildcard support)"
+        echo "  3. Self-signed Certificate (Development only)"
+        echo "  4. Skip SSL setup (Use HTTP only)"
+        echo ""
+
+        read -p "Select option [1-4] (default: 1): " SSL_OPTION
+        SSL_OPTION=${SSL_OPTION:-1}
+
+        case $SSL_OPTION in
+            1)
+                setup_letsencrypt_dns_challenge
+                ;;
+            2)
+                setup_letsencrypt_http_challenge
+                ;;
+            3)
+                setup_self_signed_ssl
+                ;;
+            4)
+                log_info "Skipping SSL setup"
+                USE_SSL=false
+                ;;
+            *)
+                log_warning "Invalid option, using DNS challenge..."
+                setup_letsencrypt_dns_challenge
+                ;;
+        esac
     else
         log_info "Skipping SSL setup"
     fi
 }
 
-setup_letsencrypt_ssl() {
-    log_info "Setting up Let's Encrypt certificate..."
+# Let's Encrypt DNS Challenge
+setup_letsencrypt_dns_challenge() {
+    log_step "Let's Encrypt - DNS Challenge Setup"
+
+    # Install required tools
+    apt-get install -y dnsutils >/dev/null 2>&1
+
+    # Check DNS records first
+    show_dns_configuration_guide
+
+    if ! confirm "Have you configured the required DNS records?"; then
+        log_error "Please configure DNS records first"
+        setup_self_signed_ssl
+        return
+    fi
+
+    log_info "Waiting 10 seconds for DNS propagation..."
+    sleep 10
+
+    # Verify DNS
+    if ! check_dns_records "$DOMAIN" "$PUBLIC_IP"; then
+        log_warning "DNS records not fully configured"
+
+        if ! confirm "Continue anyway? (May fail)"; then
+            setup_self_signed_ssl
+            return
+        fi
+    fi
+
+    echo ""
+    log_info "Starting Let's Encrypt certificate request..."
+    log_warning "This requires manual DNS TXT record verification"
+    echo ""
+
+    if ! confirm "Ready to continue?"; then
+        setup_self_signed_ssl
+        return
+    fi
 
     # Stop nginx temporarily
-    systemctl stop nginx
+    systemctl stop nginx 2>/dev/null
 
-    # Get certificate
-    certbot certonly --standalone -d "$DOMAIN" -d "*.$DOMAIN" --preferred-challenges dns --email "$ADMIN_EMAIL" --agree-tos --non-interactive || {
+    # Manual DNS challenge
+    echo ""
+    log_info "Please follow the instructions carefully..."
+    echo ""
+
+    # Run certbot with manual DNS challenge
+    certbot certonly --manual \
+        --preferred-challenges dns \
+        -d "$DOMAIN" \
+        -d "*.$DOMAIN" \
+        --email "$ADMIN_EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --manual-public-ip-logging-ok
+
+    CERT_EXIT=$?
+
+    # Start nginx back
+    systemctl start nginx 2>/dev/null
+
+    if [ $CERT_EXIT -eq 0 ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        log_success "SSL certificate obtained successfully!"
+        setup_cert_renewal
+        return 0
+    else
         log_error "Failed to obtain SSL certificate"
         log_info "Falling back to self-signed certificate..."
         setup_self_signed_ssl
-        return
-    }
-
-    # Setup auto-renewal
-    (crontab -l 2>/dev/null; echo "0 0 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
-
-    systemctl start nginx
-    log_success "Let's Encrypt SSL certificate installed"
+        return 1
+    fi
 }
 
+# Let's Encrypt HTTP Challenge (no wildcard)
+setup_letsencrypt_http_challenge() {
+    log_step "Let's Encrypt - HTTP Challenge Setup"
+
+    log_warning "HTTP challenge does NOT support wildcard certificates"
+    log_info "Only $DOMAIN will be certified, not *.$DOMAIN"
+    log_warning "Callback subdomains will NOT have valid SSL!"
+    echo ""
+
+    if ! confirm "Continue with HTTP challenge?"; then
+        setup_letsencrypt_dns_challenge
+        return
+    fi
+
+    # Stop nginx
+    systemctl stop nginx 2>/dev/null
+
+    # Get certificate
+    certbot certonly --standalone \
+        -d "$DOMAIN" \
+        --email "$ADMIN_EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --non-interactive
+
+    CERT_EXIT=$?
+
+    # Start nginx back
+    systemctl start nginx 2>/dev/null
+
+    if [ $CERT_EXIT -eq 0 ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        log_success "SSL certificate obtained"
+        setup_cert_renewal
+        return 0
+    else
+        log_error "Failed to obtain certificate"
+        setup_self_signed_ssl
+        return 1
+    fi
+}
+
+# Self-signed SSL
 setup_self_signed_ssl() {
     log_info "Creating self-signed SSL certificate..."
 
@@ -506,13 +964,37 @@ setup_self_signed_ssl() {
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout /etc/ssl/alewo-callback/privkey.pem \
         -out /etc/ssl/alewo-callback/fullchain.pem \
-        -subj "/C=US/ST=State/L=City/O=Organization/CN=*.$DOMAIN"
+        -subj "/C=US/ST=State/L=City/O=Organization/CN=*.$DOMAIN" \
+        >/dev/null 2>&1
 
     # Update .env
     sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=/etc/ssl/alewo-callback/privkey.pem|g" "$INSTALL_DIR/.env"
     sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=/etc/ssl/alewo-callback/fullchain.pem|g" "$INSTALL_DIR/.env"
 
     log_success "Self-signed SSL certificate created"
+    log_warning "Browsers will show security warning for self-signed certificates"
+}
+
+# Setup certificate auto-renewal
+setup_cert_renewal() {
+    log_info "Setting up auto-renewal..."
+
+    # Create renewal hook directory
+    mkdir -p /etc/letsencrypt/renewal-hooks/post
+
+    # Create reload script
+    cat > /etc/letsencrypt/renewal-hooks/post/reload-nginx.sh <<'EOF'
+#!/bin/bash
+systemctl reload nginx
+EOF
+
+    chmod +x /etc/letsencrypt/renewal-hooks/post/reload-nginx.sh
+
+    # Add cron job for renewal
+    (crontab -l 2>/dev/null | grep -v "certbot renew"; \
+     echo "0 0,12 * * * certbot renew --quiet --post-hook 'systemctl reload nginx' >/dev/null 2>&1") | crontab -
+
+    log_success "Auto-renewal configured (checks twice daily)"
 }
 
 # Configure Nginx
@@ -750,11 +1232,18 @@ show_completion() {
     echo -e "${YELLOW}Password:${NC} (the one you entered)"
     echo ""
     echo -e "${CYAN}Management Commands:${NC}"
-    echo -e "  ${GREEN}alewo-start${NC}   - Start the application"
-    echo -e "  ${GREEN}alewo-stop${NC}    - Stop the application"
-    echo -e "  ${GREEN}alewo-restart${NC} - Restart the application"
-    echo -e "  ${GREEN}alewo-status${NC}  - Check application status"
-    echo -e "  ${GREEN}alewo-logs${NC}    - View application logs"
+    echo -e "  ${GREEN}sudo bash start.sh${NC}      - Start the application (DNS requires sudo)"
+    echo -e "  ${GREEN}bash stop.sh${NC}            - Stop the application"
+    echo -e "  ${GREEN}bash stop.sh --force${NC}    - Force stop immediately"
+    echo -e "  ${GREEN}bash status.sh${NC}          - Check application status"
+    echo -e "  ${GREEN}bash status.sh --watch${NC}  - Live monitoring (updates every 5s)"
+    echo -e "  ${GREEN}alewo-logs${NC}              - View application logs"
+    echo ""
+    echo -e "${CYAN}PM2 Management (Alternative):${NC}"
+    echo -e "  ${GREEN}alewo-start${NC}             - Start with PM2"
+    echo -e "  ${GREEN}alewo-stop${NC}              - Stop PM2 process"
+    echo -e "  ${GREEN}alewo-restart${NC}           - Restart PM2 process"
+    echo -e "  ${GREEN}alewo-status${NC}            - PM2 status"
     echo ""
     echo -e "${CYAN}Important Files:${NC}"
     echo -e "  ${YELLOW}Installation Directory:${NC} $INSTALL_DIR"
@@ -770,17 +1259,34 @@ show_completion() {
 
     if [ "$DOMAIN" != "$PUBLIC_IP" ]; then
         echo -e "${YELLOW}DNS Configuration Required:${NC}"
-        echo -e "  Add these DNS records:"
-        echo -e "  ${GREEN}A${NC}     $DOMAIN     -> $PUBLIC_IP"
-        echo -e "  ${GREEN}A${NC}     *.$DOMAIN   -> $PUBLIC_IP"
+        echo -e "  Add these DNS records at your DNS provider:"
+        echo -e "  ${GREEN}A${NC}      $DOMAIN       -> $PUBLIC_IP"
+        echo -e "  ${GREEN}A${NC}      *.$DOMAIN     -> $PUBLIC_IP"
+        echo -e "  ${GREEN}NS${NC}     $DOMAIN       -> ns1.$DOMAIN"
+        echo -e "  ${GREEN}A${NC}      ns1.$DOMAIN   -> $PUBLIC_IP"
+        echo ""
+        echo -e "  ${YELLOW}Note:${NC} DNS server is running on port 53 (UDP)"
+        echo -e "  ${YELLOW}Note:${NC} Random subdomains: 10 minutes expiry"
+        echo -e "  ${YELLOW}Note:${NC} Custom subdomains: 1 minute - 7 days (user-defined)"
+        echo -e "  ${YELLOW}Note:${NC} IP Geolocation enabled for all requests"
         echo ""
     fi
 
+    echo -e "${CYAN}Key Features Installed:${NC}"
+    echo -e "  ✅ DNS Server (Port 53) - Captures A, AAAA, TXT, MX, CNAME, NS queries"
+    echo -e "  ✅ HTTP/HTTPS Server - All methods with full request capture"
+    echo -e "  ✅ IP Geolocation - Automatic location detection (Country, City, Coordinates)"
+    echo -e "  ✅ Real-time Updates - WebSocket notifications"
+    echo -e "  ✅ Auto-Expiring - Random (10min), Custom (1min-7days), Scripts (5min)"
+    echo -e "  ✅ Export - JSON/CSV with geolocation data"
+    echo -e "  ✅ Script Generator - Shell, Backdoor, CMD, Web, SQL templates"
+    echo ""
     echo -e "${CYAN}Security Recommendations:${NC}"
     echo -e "  1. Change the JWT secret in .env file"
     echo -e "  2. Setup regular database backups"
     echo -e "  3. Keep system packages updated"
     echo -e "  4. Monitor application logs regularly"
+    echo -e "  5. Use firewall to restrict access if needed"
     echo ""
     echo -e "${GREEN}Happy testing! 🚀${NC}"
     echo ""

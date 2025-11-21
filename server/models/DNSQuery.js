@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const callbackSchema = new mongoose.Schema({
+const dnsQuerySchema = new mongoose.Schema({
   subdomainId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subdomain',
@@ -11,33 +11,18 @@ const callbackSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  method: {
-    type: String,
-    required: true
-  },
-  path: {
-    type: String,
-    required: true
-  },
-  headers: {
-    type: Object,
-    default: {}
-  },
   query: {
-    type: Object,
-    default: {}
-  },
-  body: {
-    type: mongoose.Schema.Types.Mixed,
-    default: null
-  },
-  bodyRaw: {
     type: String,
-    default: ''
+    required: true
   },
-  ip: {
+  queryType: {
     type: String,
-    default: ''
+    enum: ['A', 'AAAA', 'TXT', 'MX', 'CNAME', 'NS', 'SOA', 'PTR', 'ANY', 'UNKNOWN'],
+    default: 'A'
+  },
+  sourceIP: {
+    type: String,
+    required: true
   },
   geolocation: {
     country: { type: String, default: '' },
@@ -47,14 +32,9 @@ const callbackSchema = new mongoose.Schema({
     ll: { type: [Number], default: [] }, // [latitude, longitude]
     range: { type: [Number], default: [] }
   },
-  userAgent: {
-    type: String,
-    default: ''
-  },
-  protocol: {
-    type: String,
-    enum: ['http', 'https'],
-    default: 'http'
+  response: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
   },
   timestamp: {
     type: Date,
@@ -63,7 +43,8 @@ const callbackSchema = new mongoose.Schema({
 });
 
 // Index for faster queries
-callbackSchema.index({ subdomainId: 1, timestamp: -1 });
-callbackSchema.index({ userId: 1, timestamp: -1 });
+dnsQuerySchema.index({ subdomainId: 1, timestamp: -1 });
+dnsQuerySchema.index({ userId: 1, timestamp: -1 });
+dnsQuerySchema.index({ timestamp: 1 }); // For cleanup
 
-export default mongoose.model('Callback', callbackSchema);
+export default mongoose.model('DNSQuery', dnsQuerySchema);

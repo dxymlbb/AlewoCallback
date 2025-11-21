@@ -4,12 +4,18 @@ A modern, colorful callback service similar to Burp Collaborator. Monitor HTTP/H
 
 ## Features
 
+- **DNS + HTTP Monitoring**: Full DNS server integration for out-of-band detection
+- **Real-time Interactions**: Live DNS queries and HTTP requests with Socket.IO
+- **Combined Timeline View**: See all DNS and HTTP interactions in one unified timeline
+- **IP Geolocation**: Automatic geolocation detection for all DNS and HTTP requests (country, region, city, coordinates)
+- **Auto-Expiring Subdomains**: Random subdomains expire after 10 minutes, custom subdomains support user-defined expiry (1 minute to 7 days)
 - **Modern UI**: Beautiful, colorful design with animated gradients and glass-morphism effects
-- **Subdomain Callbacks**: Generate random or custom subdomains for callback testing
-- **Real-time Updates**: Live callback notifications using Socket.IO
+- **Random & Custom Subdomains**: Generate random subdomains (10 min expiry) or create custom subdomains with configurable expiry time (up to 7 days)
 - **All HTTP Methods**: Support for GET, POST, PUT, DELETE, PATCH, and more
-- **SSL/HTTPS Support**: Secure callback handling
+- **SSL/HTTPS Support**: Secure callback handling with Let's Encrypt integration
 - **Comprehensive Request Viewer**: View headers, query parameters, body, and metadata
+- **Export Capabilities**: Export interactions as JSON or CSV for analysis
+- **Search & Filter**: Powerful filtering by type (DNS/HTTP), search, and date range
 - **Script Generator**: Generate testing scripts with multiple templates:
   - Shell scripts (bash, sh)
   - Backdoors (PHP, JSP, ASPX)
@@ -18,7 +24,7 @@ A modern, colorful callback service similar to Burp Collaborator. Monitor HTTP/H
   - SQL injection callbacks (MSSQL, MySQL, Oracle)
 - **Auto-Expiring Scripts**: Scripts automatically delete after 5 minutes for security
 - **Custom Scripts**: Upload custom scripts with any file format
-- **Authentication**: Secure JWT-based authentication
+- **Authentication**: Secure JWT-based authentication (registration disabled by default)
 - **Dashboard**: Intuitive interface to manage everything
 
 ## Tech Stack
