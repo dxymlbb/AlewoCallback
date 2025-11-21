@@ -1135,44 +1135,25 @@ setup_firewall() {
 
 # Create management scripts
 create_management_scripts() {
-    log_step "Creating Management Scripts"
+    log_step "Installing Management Command"
 
-    # Create start script
-    cat > /usr/local/bin/alewo-start <<'EOFSTART'
-#!/bin/bash
-pm2 start alewo-callback
-EOFSTART
-    chmod +x /usr/local/bin/alewo-start
+    # Copy alewo-callback command to /usr/local/bin/
+    if [ -f "$INSTALL_DIR/alewo-callback" ]; then
+        cp "$INSTALL_DIR/alewo-callback" /usr/local/bin/alewo-callback
+        chmod +x /usr/local/bin/alewo-callback
+        log_success "alewo-callback command installed to /usr/local/bin/"
+    else
+        log_error "alewo-callback command file not found in $INSTALL_DIR"
+        return 1
+    fi
 
-    # Create stop script
-    cat > /usr/local/bin/alewo-stop <<'EOFSTOP'
-#!/bin/bash
-pm2 stop alewo-callback
-EOFSTOP
-    chmod +x /usr/local/bin/alewo-stop
-
-    # Create restart script
-    cat > /usr/local/bin/alewo-restart <<'EOFRESTART'
-#!/bin/bash
-pm2 restart alewo-callback
-EOFRESTART
-    chmod +x /usr/local/bin/alewo-restart
-
-    # Create status script
-    cat > /usr/local/bin/alewo-status <<'EOFSTATUS'
-#!/bin/bash
-pm2 status alewo-callback
-EOFSTATUS
-    chmod +x /usr/local/bin/alewo-status
-
-    # Create logs script
-    cat > /usr/local/bin/alewo-logs <<'EOFLOGS'
-#!/bin/bash
-pm2 logs alewo-callback
-EOFLOGS
-    chmod +x /usr/local/bin/alewo-logs
-
-    log_success "Management scripts created"
+    # Verify installation
+    if command -v alewo-callback &> /dev/null; then
+        log_success "Command 'alewo-callback' is now available globally"
+    else
+        log_error "Failed to install alewo-callback command"
+        return 1
+    fi
 }
 
 # Test installation
@@ -1232,18 +1213,13 @@ show_completion() {
     echo -e "${YELLOW}Password:${NC} (the one you entered)"
     echo ""
     echo -e "${CYAN}Management Commands:${NC}"
-    echo -e "  ${GREEN}sudo bash start.sh${NC}      - Start the application (DNS requires sudo)"
-    echo -e "  ${GREEN}bash stop.sh${NC}            - Stop the application"
-    echo -e "  ${GREEN}bash stop.sh --force${NC}    - Force stop immediately"
-    echo -e "  ${GREEN}bash status.sh${NC}          - Check application status"
-    echo -e "  ${GREEN}bash status.sh --watch${NC}  - Live monitoring (updates every 5s)"
-    echo -e "  ${GREEN}alewo-logs${NC}              - View application logs"
-    echo ""
-    echo -e "${CYAN}PM2 Management (Alternative):${NC}"
-    echo -e "  ${GREEN}alewo-start${NC}             - Start with PM2"
-    echo -e "  ${GREEN}alewo-stop${NC}              - Stop PM2 process"
-    echo -e "  ${GREEN}alewo-restart${NC}           - Restart PM2 process"
-    echo -e "  ${GREEN}alewo-status${NC}            - PM2 status"
+    echo -e "  ${GREEN}sudo alewo-callback start${NC}      - Start all services (HTTP, DNS)"
+    echo -e "  ${GREEN}sudo alewo-callback stop${NC}       - Stop all services"
+    echo -e "  ${GREEN}sudo alewo-callback restart${NC}    - Restart all services"
+    echo -e "  ${GREEN}alewo-callback status${NC}          - Check service status"
+    echo -e "  ${GREEN}alewo-callback logs${NC}            - View service logs"
+    echo -e "  ${GREEN}alewo-callback logs -f${NC}         - Follow logs in real-time"
+    echo -e "  ${GREEN}alewo-callback help${NC}            - Show all available commands"
     echo ""
     echo -e "${CYAN}Important Files:${NC}"
     echo -e "  ${YELLOW}Installation Directory:${NC} $INSTALL_DIR"
