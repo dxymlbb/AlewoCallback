@@ -59,24 +59,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (username, email, password) => {
-    try {
-      const response = await api.post('/auth/register', { username, email, password });
-      const { token, ...userData } = response.data;
-
-      localStorage.setItem('token', token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(userData);
-
-      toast.success('Registration successful!');
-      navigate('/dashboard');
-    } catch (error) {
-      const message = error.response?.data?.message || 'Registration failed';
-      toast.error(message);
-      throw error;
-    }
-  };
-
   const logout = () => {
     localStorage.removeItem('token');
     delete api.defaults.headers.common['Authorization'];
@@ -89,7 +71,6 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     login,
-    register,
     logout
   };
 

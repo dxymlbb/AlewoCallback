@@ -49,32 +49,51 @@ A modern, colorful callback service similar to Burp Collaborator. Monitor HTTP/H
 
 ## Quick Start
 
-### 1. Clone and Install
+### Automated Installation (Recommended)
+
+**One-command installation** that sets up everything automatically:
 
 ```bash
+# Clone repository
+git clone <repository-url>
+cd AlewoCallback
+
+# Run interactive installer
+sudo bash install.sh
+```
+
+The installer will:
+- ✅ Install all dependencies (Node.js, MongoDB, Nginx, PM2)
+- ✅ Configure environment variables
+- ✅ Create administrator account
+- ✅ Setup SSL/HTTPS (optional)
+- ✅ Configure DNS and firewall
+- ✅ Start the application
+
+**See [INSTALL.md](INSTALL.md) for complete installation guide.**
+
+### Manual Installation (Development)
+
+For development or manual setup:
+
+```bash
+# 1. Clone and install dependencies
 git clone <repository-url>
 cd AlewoCallback
 npm run install-all
-```
 
-### 2. Configure Environment
-
-```bash
+# 2. Configure environment
 cp .env.example .env
 cp client/.env.example client/.env
-```
+# Edit .env and client/.env with your settings
 
-Edit `.env` and `client/.env` with your settings.
-
-### 3. Start Development Server
-
-```bash
+# 3. Start development server
 npm run dev
 ```
 
 Open http://localhost:5173 in your browser.
 
-For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)
+**Note:** Registration is disabled. Create admin account during installation or manually via MongoDB.
 
 ## Usage
 
