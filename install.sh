@@ -1090,6 +1090,8 @@ setup_letsencrypt_dns_challenge() {
 
     if [ $CERT_EXIT -eq 0 ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
         log_success "SSL certificate obtained successfully!"
+        log_warning "Manual DNS challenge certificates require manual renewal"
+        log_info "Certificate expires in 90 days - you'll need to run certbot again"
         setup_cert_renewal
         return 0
     else
@@ -1310,9 +1312,17 @@ setup_pm2() {
     }
 
     # Setup PM2 startup
-    pm2 startup | tail -n 1 | bash || {
-        log_warning "PM2 startup configuration may have issues"
-    }
+    log_info "Configuring PM2 to start on system boot..."
+    PM2_STARTUP_CMD=$(pm2 startup systemd -u root --hp /root 2>&1 | grep "sudo" | sed 's/\[PM2\] //')
+    if [ -n "$PM2_STARTUP_CMD" ]; then
+        # Extract the actual command without "sudo" prefix since we're already root
+        ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed 's/^sudo //')
+        if [ -n "$ACTUAL_CMD" ]; then
+            eval "$ACTUAL_CMD" || log_warning "PM2 startup configuration may have issues"
+        fi
+    else
+        log_warning "Could not configure PM2 startup automatically"
+    fi
 
     log_success "PM2 configured and application started"
     mark_step_complete "pm2_setup"
@@ -1447,7 +1457,15 @@ show_completion() {
     echo -e "  ${YELLOW}Nginx Config:${NC} /etc/nginx/sites-available/alewo-callback"
     echo ""
 
-    if [ "$USE_SSL" = false ] && [ "$DOMAIN" != "$PUBLIC_IP" ]; then
+    if [ "$USE_SSL" = true ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        echo -e "${YELLOW}SSL Certificate Information:${NC}"
+        echo -e "  Certificate expires in 90 days"
+        echo -e "  Manual DNS challenge requires manual renewal"
+        echo -e "  ${CYAN}To renew, run:${NC}"
+        echo -e "    sudo certbot certonly --manual --preferred-challenges dns \\"
+        echo -e "      -d $DOMAIN -d *.$DOMAIN --force-renewal"
+        echo ""
+    elif [ "$USE_SSL" = false ] && [ "$DOMAIN" != "$PUBLIC_IP" ]; then
         echo -e "${YELLOW}Note: To enable SSL later, run:${NC}"
         echo -e "  certbot --nginx -d $DOMAIN -d *.$DOMAIN"
         echo ""
