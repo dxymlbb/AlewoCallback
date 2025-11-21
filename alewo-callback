@@ -478,6 +478,147 @@ cmd_logs() {
 }
 
 #######################################
+# UNINSTALL Command
+#######################################
+
+confirm() {
+    local prompt_text=$1
+    read -p "$(echo -e ${YELLOW}$prompt_text ${NC}[y/N]: )" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+cmd_uninstall() {
+    clear
+    echo -e "${RED}"
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║                                                           ║"
+    echo "║              ALEWO CALLBACK UNINSTALLER                  ║"
+    echo "║                                                           ║"
+    echo "║              ⚠️  THIS WILL REMOVE ALL DATA  ⚠️            ║"
+    echo "║                                                           ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+
+    # Check if running as root
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This command must be run as root (use sudo)"
+        exit 1
+    fi
+
+    log_warning "This will completely remove AlewoCallback from your system!"
+    echo ""
+
+    if ! confirm "Are you sure you want to continue?"; then
+        log_info "Uninstallation cancelled"
+        exit 0
+    fi
+
+    # Create backup
+    if confirm "Do you want to create a backup before uninstalling?"; then
+        local BACKUP_DIR="/root/alewo-backup-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+
+        log_info "Creating backup at: $BACKUP_DIR"
+
+        # Backup application files
+        if [ -d "$INSTALL_DIR" ]; then
+            cp -r "$INSTALL_DIR" "$BACKUP_DIR/" 2>/dev/null || true
+        fi
+
+        # Backup MongoDB
+        if command -v mongodump &> /dev/null; then
+            mongodump --db alewo-callback --out "$BACKUP_DIR/mongodb" 2>/dev/null || true
+        fi
+
+        # Backup Nginx config
+        if [ -f /etc/nginx/sites-available/alewo-callback ]; then
+            cp /etc/nginx/sites-available/alewo-callback "$BACKUP_DIR/" 2>/dev/null || true
+        fi
+
+        log_success "Backup created at: $BACKUP_DIR"
+    fi
+
+    # Stop application
+    log_info "Stopping application..."
+    cmd_stop > /dev/null 2>&1 || true
+
+    # Remove Nginx configuration
+    log_info "Removing Nginx configuration..."
+    if [ -f /etc/nginx/sites-enabled/alewo-callback ]; then
+        rm -f /etc/nginx/sites-enabled/alewo-callback
+    fi
+    if [ -f /etc/nginx/sites-available/alewo-callback ]; then
+        rm -f /etc/nginx/sites-available/alewo-callback
+    fi
+    if command -v nginx &> /dev/null; then
+        nginx -t > /dev/null 2>&1 && systemctl reload nginx || true
+    fi
+    log_success "Nginx configuration removed"
+
+    # Remove application files
+    log_info "Removing application files..."
+    if [ -d "$INSTALL_DIR" ]; then
+        rm -rf "$INSTALL_DIR"
+        log_success "Application files removed from $INSTALL_DIR"
+    fi
+
+    # Remove SSL certificates
+    if confirm "Do you want to remove SSL certificates?"; then
+        if [ -d "/etc/ssl/alewo-callback" ]; then
+            rm -rf /etc/ssl/alewo-callback
+            log_info "Removed self-signed SSL certificates"
+        fi
+        log_warning "Let's Encrypt certificates kept for safety"
+        log_warning "Remove manually if needed: certbot delete --cert-name <domain>"
+    fi
+
+    # Remove database
+    if confirm "Do you want to remove the MongoDB database? (THIS WILL DELETE ALL DATA)"; then
+        if command -v mongosh &> /dev/null; then
+            mongosh --eval "db.getSiblingDB('alewo-callback').dropDatabase()" 2>/dev/null || true
+            log_success "Database removed"
+        elif command -v mongo &> /dev/null; then
+            mongo --eval "db.getSiblingDB('alewo-callback').dropDatabase()" 2>/dev/null || true
+            log_success "Database removed"
+        else
+            log_warning "MongoDB client not found, skipping database removal"
+        fi
+    fi
+
+    # Remove this command itself
+    log_info "Removing alewo-callback command..."
+    if [ -f "/usr/local/bin/alewo-callback" ]; then
+        rm -f /usr/local/bin/alewo-callback
+        log_success "Command removed from /usr/local/bin/"
+    fi
+
+    # Completion message
+    echo ""
+    echo -e "${GREEN}"
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║                                                           ║"
+    echo "║        ALEWO CALLBACK HAS BEEN UNINSTALLED                ║"
+    echo "║                                                           ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+    echo -e "${CYAN}The following have been removed:${NC}"
+    echo -e "  ✓ Application files"
+    echo -e "  ✓ Nginx configuration"
+    echo -e "  ✓ Application processes"
+    echo -e "  ✓ alewo-callback command"
+    echo ""
+    echo -e "${YELLOW}Thank you for using AlewoCallback!${NC}"
+    echo ""
+}
+
+#######################################
 # HELP Command
 #######################################
 
@@ -494,6 +635,7 @@ cmd_help() {
     echo -e "  ${GREEN}restart${NC}              Restart all services"
     echo -e "  ${GREEN}status${NC}               Show service status and configuration"
     echo -e "  ${GREEN}logs${NC}                 Show service logs"
+    echo -e "  ${GREEN}uninstall${NC}            Completely remove AlewoCallback from system"
     echo -e "  ${GREEN}help${NC}                 Show this help message"
     echo ""
 
@@ -511,11 +653,13 @@ cmd_help() {
     echo -e "  alewo-callback status                  # Check status (no sudo needed)"
     echo -e "  alewo-callback logs -f                 # Follow live logs"
     echo -e "  alewo-callback logs --error -n 100     # Show last 100 error lines"
+    echo -e "  sudo alewo-callback uninstall          # Remove AlewoCallback completely"
     echo ""
 
     echo -e "${CYAN}NOTES:${NC}"
-    echo -e "  • ${YELLOW}start/stop/restart${NC} commands require sudo/root"
+    echo -e "  • ${YELLOW}start/stop/restart/uninstall${NC} commands require sudo/root"
     echo -e "  • ${YELLOW}status/logs${NC} commands can run without root"
+    echo -e "  • ${YELLOW}uninstall${NC} will prompt for backup and confirmation before removal"
     echo -e "  • DNS server runs on port 53 (embedded with HTTP server)"
     echo -e "  • Logs are stored in: $LOG_DIR"
     echo -e "  • PID files are in: $PID_DIR"
@@ -545,6 +689,9 @@ main() {
         logs)
             shift
             cmd_logs "$@"
+            ;;
+        uninstall)
+            cmd_uninstall
             ;;
         help|--help|-h)
             cmd_help
