@@ -400,14 +400,38 @@ install_pm2() {
 
     log_step "Installing PM2"
 
-    if command -v pm2 &> /dev/null; then
-        log_info "PM2 already installed"
+    # Get Node.js installation path
+    local NODE_DIR=$(dirname $(dirname $(which node 2>/dev/null || echo "/opt/node22/bin/node")))
+    local NPM_BIN="$NODE_DIR/bin/npm"
+    local PM2_BIN="$NODE_DIR/bin/pm2"
+
+    if [ -f "$PM2_BIN" ]; then
+        log_info "PM2 already installed at $PM2_BIN"
     else
-        npm install -g pm2 || {
+        log_info "Installing PM2 using $NPM_BIN..."
+        "$NPM_BIN" install -g pm2 || {
             log_error "PM2 installation failed"
             return 1
         }
-        log_success "PM2 installed"
+        log_success "PM2 installed at $PM2_BIN"
+    fi
+
+    # Add PM2 to PATH in /etc/environment if not already there
+    if ! grep -q "$NODE_DIR/bin" /etc/environment 2>/dev/null; then
+        log_info "Adding Node.js/PM2 to system PATH..."
+        # Backup /etc/environment
+        cp /etc/environment /etc/environment.bak 2>/dev/null || true
+
+        # Add to PATH
+        if grep -q "^PATH=" /etc/environment 2>/dev/null; then
+            sed -i "s|^PATH=\"\\(.*\\)\"|PATH=\"$NODE_DIR/bin:\\1\"|" /etc/environment
+        else
+            echo "PATH=\"$NODE_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"" >> /etc/environment
+        fi
+
+        # Export for current session
+        export PATH="$NODE_DIR/bin:$PATH"
+        log_success "Node.js/PM2 added to system PATH"
     fi
 
     mark_step_complete "pm2"

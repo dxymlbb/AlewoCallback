@@ -20,6 +20,45 @@ NC='\033[0m'
 INSTALL_DIR="/var/www/alewo-callback"
 APP_NAME="alewo-callback"
 
+# Find PM2 and Node.js binaries
+find_node_binaries() {
+    # Try common locations
+    local NODE_DIRS=(
+        "/opt/node22"
+        "/opt/node20"
+        "/opt/node18"
+        "/usr/local"
+        "/usr"
+    )
+
+    for dir in "${NODE_DIRS[@]}"; do
+        if [ -f "$dir/bin/pm2" ]; then
+            export NODE_BIN="$dir/bin/node"
+            export PM2_BIN="$dir/bin/pm2"
+            export NPM_BIN="$dir/bin/npm"
+            export PATH="$dir/bin:$PATH"
+            return 0
+        fi
+    done
+
+    # Fallback to PATH
+    if command -v pm2 &>/dev/null; then
+        export PM2_BIN=$(command -v pm2)
+        export NODE_BIN=$(command -v node)
+        export NPM_BIN=$(command -v npm)
+        return 0
+    fi
+
+    return 1
+}
+
+# Initialize binaries
+if ! find_node_binaries; then
+    echo -e "${RED}[ERROR]${NC} PM2 not found. Please install PM2 first."
+    echo "Run: npm install -g pm2"
+    exit 1
+fi
+
 # Load environment variables
 if [ -f "$INSTALL_DIR/.env" ]; then
     export $(cat "$INSTALL_DIR/.env" | grep -v '^#' | xargs 2>/dev/null)
@@ -80,8 +119,8 @@ show_banner() {
 
 # Check if PM2 process is running
 is_pm2_running() {
-    if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
-        local status=$(pm2 jlist | grep -o "\"name\":\"$APP_NAME\"[^}]*\"status\":\"[^\"]*\"" | grep -o 'status":"[^"]*"' | cut -d'"' -f3)
+    if "$PM2_BIN" describe "$APP_NAME" > /dev/null 2>&1; then
+        local status=$("$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"status\":\"[^\"]*\"" | grep -o 'status":"[^"]*"' | cut -d'"' -f3)
         if [ "$status" = "online" ]; then
             return 0
         fi
@@ -91,12 +130,16 @@ is_pm2_running() {
 
 # Get PM2 process uptime
 get_pm2_uptime() {
-    pm2 jlist | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2
+    "$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2
 }
 
 # Format uptime
 format_uptime() {
     local uptime_ms=$1
+    if [ -z "$uptime_ms" ] || [ "$uptime_ms" = "0" ]; then
+        echo "just started"
+        return
+    fi
     local uptime_sec=$((uptime_ms / 1000))
     local days=$((uptime_sec / 86400))
     local hours=$(((uptime_sec % 86400) / 3600))
@@ -111,10 +154,32 @@ format_uptime() {
     fi
 }
 
-# Check if port is listening
+# Check if port is listening (supports both TCP and UDP)
 check_port() {
     local port=$1
-    ss -tlnp 2>/dev/null | grep -q ":$port " && return 0 || return 1
+    local protocol=${2:-tcp}  # default to tcp if not specified
+
+    if [ "$protocol" = "udp" ]; then
+        # Check UDP port (for DNS)
+        if command -v ss &>/dev/null; then
+            ss -ulnp 2>/dev/null | grep -q ":$port " && return 0
+        elif command -v netstat &>/dev/null; then
+            netstat -ulnp 2>/dev/null | grep -q ":$port " && return 0
+        elif command -v lsof &>/dev/null; then
+            lsof -Pi :$port -sUDP 2>/dev/null | grep -q "LISTEN\|UDP" && return 0
+        fi
+    else
+        # Check TCP port (for HTTP/HTTPS)
+        if command -v ss &>/dev/null; then
+            ss -tlnp 2>/dev/null | grep -q ":$port " && return 0
+        elif command -v netstat &>/dev/null; then
+            netstat -tlnp 2>/dev/null | grep -q ":$port " && return 0
+        elif command -v lsof &>/dev/null; then
+            lsof -Pi :$port -sTCP:LISTEN 2>/dev/null | grep -q "LISTEN" && return 0
+        fi
+    fi
+
+    return 1
 }
 
 #######################################
@@ -155,7 +220,7 @@ cmd_start() {
     cd "$INSTALL_DIR"
 
     # Start application with PM2
-    pm2 start server/index.js --name "$APP_NAME" > /dev/null 2>&1
+    "$PM2_BIN" start server/index.js --name "$APP_NAME" > /dev/null 2>&1
 
     # Wait for startup
     sleep 3
@@ -232,7 +297,7 @@ cmd_stop() {
     log_info "Stopping DNS Server..."
     echo ""
 
-    pm2 stop "$APP_NAME" > /dev/null 2>&1
+    "$PM2_BIN" stop "$APP_NAME" > /dev/null 2>&1
 
     # Verify stopped
     if ! is_pm2_running; then
@@ -271,7 +336,7 @@ cmd_restart() {
         log_info "Restarting DNS Server..."
         echo ""
 
-        pm2 restart "$APP_NAME" > /dev/null 2>&1
+        "$PM2_BIN" restart "$APP_NAME" > /dev/null 2>&1
         sleep 2
 
         if is_pm2_running; then
@@ -323,11 +388,16 @@ cmd_status() {
 
     # DNS Server Status
     echo -e "${YELLOW}DNS Server:${NC}"
-    if is_pm2_running && check_port "$DNS_PORT"; then
+    if is_pm2_running && check_port "$DNS_PORT" "udp"; then
         echo -e "  Status: ${GREEN}● Running${NC}"
         echo -e "  Port: $DNS_PORT (UDP)"
     else
-        echo -e "  Status: ${RED}● Stopped${NC}"
+        if is_pm2_running; then
+            echo -e "  Status: ${YELLOW}● Process running, port check inconclusive${NC}"
+            echo -e "  Port: $DNS_PORT (UDP)"
+        else
+            echo -e "  Status: ${RED}● Stopped${NC}"
+        fi
     fi
 
     echo ""
@@ -390,11 +460,11 @@ cmd_logs() {
 
     # Show logs via PM2
     if [ "$follow" = true ]; then
-        pm2 logs "$APP_NAME" --lines "$lines"
+        "$PM2_BIN" logs "$APP_NAME" --lines "$lines"
     elif [ "$error_only" = true ]; then
-        pm2 logs "$APP_NAME" --err --lines "$lines" --nostream
+        "$PM2_BIN" logs "$APP_NAME" --err --lines "$lines" --nostream
     else
-        pm2 logs "$APP_NAME" --lines "$lines" --nostream
+        "$PM2_BIN" logs "$APP_NAME" --lines "$lines" --nostream
     fi
 }
 
@@ -426,8 +496,8 @@ cmd_uninstall() {
     fi
 
     log_info "Stopping services..."
-    pm2 delete "$APP_NAME" 2>/dev/null || true
-    pm2 kill 2>/dev/null || true
+    "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
+    "$PM2_BIN" kill 2>/dev/null || true
 
     log_info "Removing systemd services..."
     systemctl stop pm2-root 2>/dev/null || true
