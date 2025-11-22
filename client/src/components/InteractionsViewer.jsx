@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Trash2, RefreshCw, ChevronDown, ChevronUp, Clock, Globe, Download, Filter, Search } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -34,17 +34,42 @@ const InteractionsViewer = ({ subdomain }) => {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Create stable callback references using useCallback
+  const handleNewCallback = useCallback((data) => {
+    if (subdomain && data.subdomainId === subdomain._id) {
+      setInteractions((prev) => [{ ...data.callback, type: 'HTTP' }, ...prev]);
+      toast.success('New HTTP request received!', {
+        icon: '🌐',
+        duration: 2000
+      });
+    }
+  }, [subdomain]);
+
+  const handleNewDNSQuery = useCallback((data) => {
+    if (subdomain && data.subdomainId === subdomain._id) {
+      setInteractions((prev) => [{ ...data.query, type: 'DNS' }, ...prev]);
+      toast.success('New DNS query received!', {
+        icon: '📡',
+        duration: 2000
+      });
+    }
+  }, [subdomain]);
+
   useEffect(() => {
     if (subdomain) {
       fetchInteractions();
-      setupSocketListeners();
+
+      // Register socket listeners with stable callback references
+      socketService.on('newCallback', handleNewCallback);
+      socketService.on('newDNSQuery', handleNewDNSQuery);
     }
 
+    // Cleanup: remove listeners dengan callback references yang sama
     return () => {
-      socketService.off('newCallback');
-      socketService.off('newDNSQuery');
+      socketService.off('newCallback', handleNewCallback);
+      socketService.off('newDNSQuery', handleNewDNSQuery);
     };
-  }, [subdomain]);
+  }, [subdomain, handleNewCallback, handleNewDNSQuery]);
 
   // Timer for expiry countdown
   useEffect(() => {
@@ -63,30 +88,6 @@ const InteractionsViewer = ({ subdomain }) => {
 
     return () => clearInterval(interval);
   }, [subdomain]);
-
-  const setupSocketListeners = () => {
-    // Listen for new HTTP callbacks
-    socketService.on('newCallback', (data) => {
-      if (data.subdomainId === subdomain._id) {
-        setInteractions((prev) => [{ ...data.callback, type: 'HTTP' }, ...prev]);
-        toast.success('New HTTP request received!', {
-          icon: '🌐',
-          duration: 2000
-        });
-      }
-    });
-
-    // Listen for new DNS queries
-    socketService.on('newDNSQuery', (data) => {
-      if (data.subdomainId === subdomain._id) {
-        setInteractions((prev) => [{ ...data.query, type: 'DNS' }, ...prev]);
-        toast.success('New DNS query received!', {
-          icon: '📡',
-          duration: 2000
-        });
-      }
-    });
-  };
 
   const fetchInteractions = async () => {
     if (!subdomain) return;

@@ -1015,42 +1015,87 @@ setup_ssl() {
         # Check if Let's Encrypt certificate already exists
         if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
             log_warning "Let's Encrypt certificate already exists for $DOMAIN"
+
+            # Check certificate validity
+            local CERT_VALID=false
+            local CERT_EXPIRY=""
+
+            if openssl x509 -checkend 86400 -noout -in "/etc/letsencrypt/live/$DOMAIN/cert.pem" >/dev/null 2>&1; then
+                CERT_VALID=true
+                CERT_EXPIRY=$(openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$DOMAIN/cert.pem" 2>/dev/null | cut -d= -f2)
+            fi
+
             echo ""
-            echo -e "${CYAN}Existing Certificate Options:${NC}"
+            echo -e "${CYAN}Existing Certificate Information:${NC}"
+            if [ "$CERT_VALID" = true ]; then
+                echo -e "  ${GREEN}Status:${NC} Valid"
+                echo -e "  ${GREEN}Expires:${NC} $CERT_EXPIRY"
+            else
+                echo -e "  ${RED}Status:${NC} Expired or Invalid"
+            fi
             echo ""
-            echo "  1. Use existing Let's Encrypt certificate"
-            echo "  2. Delete and create new Let's Encrypt certificate (DNS Challenge)"
+            echo -e "${CYAN}Certificate Options:${NC}"
+            echo ""
+            echo "  1. Renew/Replace existing certificate (DNS Challenge - Recommended)"
+            echo "  2. Keep existing certificate (only if valid)"
+            echo "  3. Delete and create fresh certificate"
             echo ""
 
-            read -p "Select option [1-2] (default: 1): " CERT_OPTION
+            read -p "Select option [1-3] (default: 1): " CERT_OPTION
             CERT_OPTION=${CERT_OPTION:-1}
 
             case $CERT_OPTION in
                 1)
-                    log_info "Using existing Let's Encrypt certificate"
-                    mark_step_complete "ssl_setup"
-                    return 0
+                    log_info "Renewing/Replacing existing Let's Encrypt certificate"
+                    # Delete old certificate first
+                    log_info "Removing old certificate..."
+                    certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+                    rm -rf "/etc/letsencrypt/live/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
+                    log_success "Old certificate removed"
+                    # Setup new certificate
+                    setup_letsencrypt_dns_challenge
                     ;;
                 2)
-                    log_warning "This will delete the existing certificate and create a new one"
-                    if confirm "Continue?"; then
+                    if [ "$CERT_VALID" = true ]; then
+                        log_info "Keeping existing valid certificate"
+                        mark_step_complete "ssl_setup"
+                        return 0
+                    else
+                        log_error "Certificate is expired or invalid. Cannot keep it."
+                        log_info "Switching to option 1: Renew certificate"
                         # Delete old certificate
-                        certbot delete --cert-name "$DOMAIN" --non-interactive
+                        certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
                         rm -rf "/etc/letsencrypt/live/$DOMAIN"
                         rm -rf "/etc/letsencrypt/archive/$DOMAIN"
                         rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
-                        log_info "Old certificate deleted"
+                        setup_letsencrypt_dns_challenge
+                    fi
+                    ;;
+                3)
+                    log_warning "This will permanently delete the existing certificate"
+                    if confirm "Are you sure you want to continue?"; then
+                        log_info "Deleting old certificate..."
+                        certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+                        rm -rf "/etc/letsencrypt/live/$DOMAIN"
+                        rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+                        rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
+                        log_success "Old certificate deleted"
                         setup_letsencrypt_dns_challenge
                     else
-                        log_info "Using existing certificate"
+                        log_info "Keeping existing certificate"
                         mark_step_complete "ssl_setup"
                         return 0
                     fi
                     ;;
                 *)
-                    log_info "Using existing certificate"
-                    mark_step_complete "ssl_setup"
-                    return 0
+                    log_warning "Invalid option. Defaulting to option 1 (Renew)"
+                    certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+                    rm -rf "/etc/letsencrypt/live/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+                    rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
+                    setup_letsencrypt_dns_challenge
                     ;;
             esac
         else
@@ -1426,6 +1471,12 @@ fix_dns_port_conflict() {
 
     log_step "Checking DNS Port 53 Availability"
 
+    # Backup systemd-resolved state for rollback
+    SYSTEMD_RESOLVED_WAS_ACTIVE=false
+    if systemctl is-active --quiet systemd-resolved; then
+        SYSTEMD_RESOLVED_WAS_ACTIVE=true
+    fi
+
     # Check if port 53 is in use
     if lsof -Pi :53 -sTCP:LISTEN -t >/dev/null 2>&1 || lsof -Pi :53 -sUDP -t >/dev/null 2>&1; then
         log_warning "Port 53 is already in use"
@@ -1433,35 +1484,127 @@ fix_dns_port_conflict() {
         # Check if systemd-resolved is using the port
         if systemctl is-active --quiet systemd-resolved; then
             log_info "systemd-resolved is using port 53"
-            log_info "Disabling systemd-resolved to free port 53..."
+            echo ""
+            echo -e "${YELLOW}Options:${NC}"
+            echo "  1. Disable systemd-resolved and use AlewoCallback DNS server (Recommended)"
+            echo "  2. Keep systemd-resolved (DNS server will NOT work)"
+            echo "  3. Cancel installation"
+            echo ""
+            read -p "Select option [1-3] (default: 1): " DNS_OPTION
+            DNS_OPTION=${DNS_OPTION:-1}
 
-            # Stop and disable systemd-resolved
-            systemctl stop systemd-resolved
-            systemctl disable systemd-resolved
+            case $DNS_OPTION in
+                1)
+                    log_info "Disabling systemd-resolved to free port 53..."
 
-            # Setup manual DNS resolution
-            log_info "Configuring manual DNS resolution..."
-            rm -f /etc/resolv.conf
-            cat > /etc/resolv.conf <<EOF
+                    # Backup original resolv.conf
+                    if [ -L /etc/resolv.conf ]; then
+                        RESOLV_CONF_BACKUP=$(readlink -f /etc/resolv.conf)
+                        echo "$RESOLV_CONF_BACKUP" > /tmp/alewo-callback-resolv-backup
+                    fi
+
+                    # Stop and disable systemd-resolved
+                    systemctl stop systemd-resolved
+                    systemctl disable systemd-resolved
+
+                    # Setup manual DNS resolution
+                    log_info "Configuring manual DNS resolution..."
+                    # Remove immutable flag if exists
+                    chattr -i /etc/resolv.conf 2>/dev/null || true
+                    rm -f /etc/resolv.conf
+                    cat > /etc/resolv.conf <<EOF
+# AlewoCallback DNS Configuration
+# This file was created by AlewoCallback installer
+# To restore systemd-resolved, run: sudo alewo-callback uninstall
 nameserver 8.8.8.8
 nameserver 8.8.4.4
 nameserver 1.1.1.1
+nameserver 208.67.222.222
 EOF
 
-            # Make it immutable to prevent systemd from overwriting
-            chattr +i /etc/resolv.conf
+                    # Make it immutable to prevent systemd from overwriting
+                    chattr +i /etc/resolv.conf
 
-            log_success "systemd-resolved disabled, port 53 is now available"
+                    # Verify DNS resolution works
+                    if ! nslookup google.com 8.8.8.8 >/dev/null 2>&1; then
+                        log_error "DNS resolution test failed!"
+                        log_warning "Rolling back changes..."
+                        rollback_dns_changes
+                        return 1
+                    fi
+
+                    log_success "systemd-resolved disabled, port 53 is now available"
+                    log_success "DNS resolution verified working"
+                    ;;
+                2)
+                    log_warning "Keeping systemd-resolved - DNS server will NOT work!"
+                    log_warning "AlewoCallback will function without DNS server (HTTP only)"
+                    ;;
+                3)
+                    log_error "Installation cancelled by user"
+                    exit 1
+                    ;;
+                *)
+                    log_error "Invalid option"
+                    return 1
+                    ;;
+            esac
         else
             log_warning "Port 53 is in use by another service (not systemd-resolved)"
-            log_warning "You may need to manually stop the service using port 53"
-            log_info "Continuing anyway - DNS server may fail to start"
+            log_info "Identifying the process..."
+            BLOCKING_PROCESS=$(lsof -Pi :53 -sTCP:LISTEN -t 2>/dev/null || lsof -Pi :53 -sUDP -t 2>/dev/null | head -n1)
+            if [ -n "$BLOCKING_PROCESS" ]; then
+                PROCESS_NAME=$(ps -p "$BLOCKING_PROCESS" -o comm= 2>/dev/null)
+                log_warning "Process blocking port 53: $PROCESS_NAME (PID: $BLOCKING_PROCESS)"
+                echo ""
+                echo -e "${YELLOW}You need to stop this process to use the DNS server.${NC}"
+                if confirm "Do you want to continue without DNS server? (HTTP only)"; then
+                    log_info "Continuing without DNS server"
+                else
+                    log_error "Installation cancelled"
+                    exit 1
+                fi
+            else
+                log_warning "Could not identify blocking process"
+                log_info "Continuing anyway - DNS server may fail to start"
+            fi
         fi
     else
         log_success "Port 53 is available"
     fi
 
     mark_step_complete "dns_port_fix"
+}
+
+# Rollback DNS changes if something goes wrong
+rollback_dns_changes() {
+    log_info "Rolling back DNS configuration changes..."
+
+    # Remove immutable flag
+    chattr -i /etc/resolv.conf 2>/dev/null || true
+
+    # Restore systemd-resolved if it was active before
+    if [ "$SYSTEMD_RESOLVED_WAS_ACTIVE" = true ]; then
+        log_info "  Restoring systemd-resolved..."
+        systemctl enable systemd-resolved 2>/dev/null || true
+        systemctl start systemd-resolved 2>/dev/null || true
+
+        # Restore original resolv.conf
+        rm -f /etc/resolv.conf
+        if [ -f /tmp/alewo-callback-resolv-backup ]; then
+            ORIGINAL_RESOLV=$(cat /tmp/alewo-callback-resolv-backup)
+            ln -sf "$ORIGINAL_RESOLV" /etc/resolv.conf 2>/dev/null || true
+            rm -f /tmp/alewo-callback-resolv-backup
+        else
+            ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
+        fi
+
+        log_success "systemd-resolved restored"
+    else
+        log_info "  systemd-resolved was not active before, skipping restore"
+    fi
+
+    log_success "DNS configuration rollback completed"
 }
 
 # Setup firewall

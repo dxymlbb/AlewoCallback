@@ -42,19 +42,47 @@ const StatisticsDashboard = () => {
     }
   };
 
-  const StatCard = ({ icon: Icon, label, value, color }) => (
-    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 hover:border-primary-500/50 transition-all">
-      <div className="flex items-center justify-between mb-2">
-        <div className={`w-12 h-12 rounded-lg bg-${color}-500/20 flex items-center justify-center`}>
-          <Icon className={`w-6 h-6 text-${color}-400`} />
+  const StatCard = ({ icon: Icon, label, value, color }) => {
+    // Color mapping untuk Tailwind - dynamic classes tidak bekerja dengan Tailwind purge
+    const colorClasses = {
+      primary: {
+        bg: 'bg-primary-500/20',
+        text: 'text-primary-400',
+        iconText: 'text-primary-400'
+      },
+      accent: {
+        bg: 'bg-accent-500/20',
+        text: 'text-accent-400',
+        iconText: 'text-accent-400'
+      },
+      secondary: {
+        bg: 'bg-secondary-500/20',
+        text: 'text-secondary-400',
+        iconText: 'text-secondary-400'
+      },
+      green: {
+        bg: 'bg-green-500/20',
+        text: 'text-green-400',
+        iconText: 'text-green-400'
+      }
+    };
+
+    const colors = colorClasses[color] || colorClasses.primary;
+
+    return (
+      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 hover:border-primary-500/50 transition-all">
+        <div className="flex items-center justify-between mb-2">
+          <div className={`w-12 h-12 rounded-lg ${colors.bg} flex items-center justify-center`}>
+            <Icon className={`w-6 h-6 ${colors.iconText}`} />
+          </div>
+          <div className={`text-3xl font-bold ${colors.text}`}>
+            {loading ? '...' : value.toLocaleString()}
+          </div>
         </div>
-        <div className={`text-3xl font-bold text-${color}-400`}>
-          {loading ? '...' : value.toLocaleString()}
-        </div>
+        <div className="text-sm text-gray-400 mt-2">{label}</div>
       </div>
-      <div className="text-sm text-gray-400 mt-2">{label}</div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
