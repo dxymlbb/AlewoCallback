@@ -20,6 +20,9 @@ NC='\033[0m'
 INSTALL_DIR="/var/www/alewo-callback"
 APP_NAME="alewo-callback"
 
+# Set PM2_HOME to shared location (accessible without sudo)
+export PM2_HOME="${PM2_HOME:-/var/www/.pm2}"
+
 # Find PM2 and Node.js binaries
 find_node_binaries() {
     # Try common locations
@@ -119,32 +122,56 @@ show_banner() {
 
 # Check if PM2 process is running
 is_pm2_running() {
+    # Method 1: Try PM2 API first
     if "$PM2_BIN" describe "$APP_NAME" > /dev/null 2>&1; then
         local status=$("$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"status\":\"[^\"]*\"" | grep -o 'status":"[^"]*"' | cut -d'"' -f3)
         if [ "$status" = "online" ]; then
             return 0
         fi
     fi
+
+    # Method 2: Fallback - Check via process name (works without PM2 access)
+    if pgrep -f "node.*server/index.js.*alewo-callback" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    # Method 3: Fallback - Check if ports are listening
+    if lsof -Pi :${HTTP_PORT} -sTCP:LISTEN > /dev/null 2>&1 && \
+       lsof -Pi :${DNS_PORT} -sUDP > /dev/null 2>&1; then
+        # Both HTTP and DNS ports are in use, likely our app
+        return 0
+    fi
+
     return 1
 }
 
 # Get PM2 process uptime (returns uptime in milliseconds)
 get_pm2_uptime() {
-    # pm_uptime is a timestamp, not duration - need to calculate difference
+    # Method 1: Try PM2 API first
     local pm_uptime_timestamp=$("$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"pm_uptime\":[^,]*" | grep -o 'pm_uptime":[0-9]*' | cut -d':' -f2)
 
-    if [ -z "$pm_uptime_timestamp" ] || [ "$pm_uptime_timestamp" = "0" ]; then
-        echo "0"
+    if [ -n "$pm_uptime_timestamp" ] && [ "$pm_uptime_timestamp" != "0" ]; then
+        # Get current time in milliseconds
+        local current_time_ms=$(date +%s%3N)
+        # Calculate uptime duration
+        local uptime_duration=$((current_time_ms - pm_uptime_timestamp))
+        echo "$uptime_duration"
         return
     fi
 
-    # Get current time in milliseconds
-    local current_time_ms=$(date +%s%3N)
+    # Method 2: Fallback - Get uptime from process via ps
+    local pid=$(pgrep -f "node.*server/index.js.*alewo-callback" | head -1)
+    if [ -n "$pid" ]; then
+        # Get process elapsed time in seconds
+        local elapsed_sec=$(ps -p "$pid" -o etimes= 2>/dev/null | tr -d ' ')
+        if [ -n "$elapsed_sec" ]; then
+            # Convert to milliseconds
+            echo $((elapsed_sec * 1000))
+            return
+        fi
+    fi
 
-    # Calculate uptime duration
-    local uptime_duration=$((current_time_ms - pm_uptime_timestamp))
-
-    echo "$uptime_duration"
+    echo "0"
 }
 
 # Format uptime
@@ -438,6 +465,7 @@ cmd_status() {
     echo -e "  Base Domain: ${BASE_DOMAIN}"
     echo -e "  SSL Enabled: ${SSL_ENABLED:-false}"
     echo -e "  Install Dir: ${INSTALL_DIR}"
+    echo -e "  PM2 Home: ${PM2_HOME} ${GREEN}(no sudo required)${NC}"
 
     echo ""
 }
@@ -570,22 +598,47 @@ cmd_uninstall() {
 
     # 7. Remove SSL certificates
     log_info "Removing SSL certificates..."
+
+    # Remove Let's Encrypt certificates
     if [ -d "/etc/letsencrypt/live" ]; then
         # Find and remove all certificates for this installation
         for domain in /etc/letsencrypt/live/*; do
             if [ -d "$domain" ]; then
                 domain_name=$(basename "$domain")
-                log_info "  Removing certificate for: $domain_name"
+                log_info "  Removing Let's Encrypt certificate for: $domain_name"
                 certbot delete --cert-name "$domain_name" --non-interactive 2>/dev/null || true
             fi
         done
     fi
+
+    # Remove Cloudflare/acme.sh certificates
+    if [ -d "/etc/nginx/ssl" ]; then
+        log_info "  Removing Cloudflare/acme.sh certificates..."
+        rm -rf /etc/nginx/ssl 2>/dev/null || true
+    fi
+
+    # Remove self-signed certificates
     rm -rf /etc/ssl/alewo-callback 2>/dev/null || true
+
+    # Remove acme.sh installation (optional - ask user)
+    if [ -d "/root/.acme.sh" ]; then
+        read -p "$(echo -e ${YELLOW}Remove acme.sh installation? ${NC}[y/N]: )" -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "  Removing acme.sh..."
+            /root/.acme.sh/acme.sh --uninstall 2>/dev/null || true
+            rm -rf /root/.acme.sh 2>/dev/null || true
+            log_success "acme.sh removed"
+        else
+            log_info "  Keeping acme.sh installation"
+        fi
+    fi
+
     log_success "SSL certificates removed"
 
     # 8. Remove cron jobs
     log_info "Removing cron jobs..."
-    (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback") | crontab - 2>/dev/null || true
+    (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback" | grep -v "acme.sh") | crontab - 2>/dev/null || true
     log_success "Cron jobs removed"
 
     # 9. Restore systemd-resolved (if disabled during installation)

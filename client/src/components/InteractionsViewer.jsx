@@ -407,6 +407,52 @@ const InteractionsViewer = ({ subdomain }) => {
                           </SyntaxHighlighter>
                         </div>
                       )}
+
+                      {/* Response Section */}
+                      {item.response && (
+                        <div className="border-t border-gray-700 pt-4 mt-4">
+                          <h4 className="text-sm font-semibold text-primary-400 mb-3 flex items-center gap-2">
+                            <span className="text-lg">↩️</span>
+                            Response Sent to Client
+                          </h4>
+
+                          <div className="space-y-3">
+                            {/* Response Status */}
+                            <div>
+                              <span className="text-gray-500 text-sm">Status:</span>
+                              <span className={`ml-2 px-3 py-1 rounded-lg text-sm font-semibold ${
+                                item.response.statusCode >= 200 && item.response.statusCode < 300
+                                  ? 'bg-green-500/20 text-green-400'
+                                  : item.response.statusCode >= 400
+                                  ? 'bg-red-500/20 text-red-400'
+                                  : 'bg-yellow-500/20 text-yellow-400'
+                              }`}>
+                                {item.response.statusCode} {item.response.statusMessage}
+                              </span>
+                            </div>
+
+                            {/* Response Headers */}
+                            {item.response.headers && Object.keys(item.response.headers).length > 0 && (
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-400 mb-2">Response Headers</h5>
+                                <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                  {JSON.stringify(item.response.headers, null, 2)}
+                                </SyntaxHighlighter>
+                              </div>
+                            )}
+
+                            {/* Response Body */}
+                            {item.response.bodyRaw && (
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-400 mb-2">Response Body</h5>
+                                <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                  {item.response.bodyRaw}
+                                </SyntaxHighlighter>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
                     // DNS Query Details

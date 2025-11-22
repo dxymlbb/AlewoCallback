@@ -1103,14 +1103,21 @@ setup_ssl() {
             echo ""
             echo -e "${CYAN}SSL Setup Options:${NC}"
             echo ""
-            echo "  1. Let's Encrypt with DNS Challenge (Recommended for wildcard)"
-            echo "  2. Let's Encrypt with HTTP Challenge (No wildcard support)"
-            echo "  3. Self-signed Certificate (Development only)"
-            echo "  4. Skip SSL setup (Use HTTP only)"
+            echo "  1. Let's Encrypt with DNS Challenge (Wildcard support, 90 days)"
+            echo "  2. Let's Encrypt with HTTP Challenge (No wildcard, 90 days)"
+            echo "  3. Cloudflare Origin Certificate (${GREEN}RECOMMENDED${NC} - 15 years, no rate limit)"
+            echo "  4. acme.sh with Cloudflare API (Auto DNS challenge, 90 days)"
+            echo "  5. Self-signed Certificate (Development only)"
+            echo "  6. Skip SSL setup (Use HTTP only)"
+            echo ""
+            echo -e "${YELLOW}Rate Limits:${NC}"
+            echo "  • Let's Encrypt: 5 certificates per week"
+            echo "  • Cloudflare Origin: NO LIMITS (Requires Cloudflare proxy)"
+            echo "  • acme.sh: Same as Let's Encrypt (can use ZeroSSL)"
             echo ""
 
-            read -p "Select option [1-4] (default: 1): " SSL_OPTION
-            SSL_OPTION=${SSL_OPTION:-1}
+            read -p "Select option [1-6] (default: 3): " SSL_OPTION
+            SSL_OPTION=${SSL_OPTION:-3}
 
             case $SSL_OPTION in
                 1)
@@ -1120,15 +1127,21 @@ setup_ssl() {
                     setup_letsencrypt_http_challenge
                     ;;
                 3)
-                    setup_self_signed_ssl
+                    setup_cloudflare_origin_cert
                     ;;
                 4)
+                    setup_acme_sh
+                    ;;
+                5)
+                    setup_self_signed_ssl
+                    ;;
+                6)
                     log_info "Skipping SSL setup"
                     USE_SSL=false
                     ;;
                 *)
-                    log_warning "Invalid option, using DNS challenge..."
-                    setup_letsencrypt_dns_challenge
+                    log_warning "Invalid option, using Cloudflare Origin Certificate..."
+                    setup_cloudflare_origin_cert
                     ;;
             esac
         fi
@@ -1181,12 +1194,35 @@ setup_letsencrypt_dns_challenge() {
     # Stop nginx temporarily
     systemctl stop nginx 2>/dev/null
 
+    # Check if user wants staging/testing environment
+    echo ""
+    echo -e "${YELLOW}⚠️  Let's Encrypt has rate limits:${NC}"
+    echo "  • 5 certificates per domain per week"
+    echo "  • Use staging environment for testing"
+    echo ""
+    echo -e "${CYAN}Certificate Environment:${NC}"
+    echo "  1. Production (real certificate - counts toward rate limit)"
+    echo "  2. Staging (test certificate - does NOT count toward rate limit)"
+    echo ""
+    read -p "Select environment [1-2] (default: 1): " CERT_ENV
+    CERT_ENV=${CERT_ENV:-1}
+
+    STAGING_FLAG=""
+    if [ "$CERT_ENV" = "2" ]; then
+        STAGING_FLAG="--test-cert"
+        log_info "Using Let's Encrypt STAGING environment (test certificate)"
+        log_warning "Staging certificates will show as untrusted in browsers"
+    else
+        log_info "Using Let's Encrypt PRODUCTION environment"
+    fi
+
     # Manual DNS challenge
     echo ""
     log_info "Please follow the instructions carefully..."
     echo ""
 
-    # Run certbot with manual DNS challenge
+    # Run certbot with manual DNS challenge - capture output
+    CERTBOT_LOG="/tmp/certbot-output-$$.log"
     certbot certonly --manual \
         --preferred-challenges dns \
         -d "$DOMAIN" \
@@ -1194,20 +1230,81 @@ setup_letsencrypt_dns_challenge() {
         --email "$ADMIN_EMAIL" \
         --agree-tos \
         --no-eff-email \
-        --manual-public-ip-logging-ok
+        --manual-public-ip-logging-ok \
+        $STAGING_FLAG 2>&1 | tee "$CERTBOT_LOG"
 
     CERT_EXIT=$?
 
     # Start nginx back
     systemctl start nginx 2>/dev/null
 
+    # Check for rate limit error
+    if grep -q "too many certificates" "$CERTBOT_LOG" 2>/dev/null; then
+        # Extract retry date
+        RETRY_DATE=$(grep -oP "retry after \K[^:]*" "$CERTBOT_LOG" 2>/dev/null || echo "unknown")
+
+        echo ""
+        log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_error "Let's Encrypt RATE LIMIT REACHED"
+        log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${RED}You've reached the Let's Encrypt rate limit!${NC}"
+        echo ""
+        echo -e "${YELLOW}What happened:${NC}"
+        echo "  • Let's Encrypt allows max 5 certificates per domain per week"
+        echo "  • Your domain already has 5 certificates issued recently"
+        echo "  • Retry after: ${CYAN}$RETRY_DATE${NC}"
+        echo ""
+        echo -e "${CYAN}Available Solutions:${NC}"
+        echo ""
+        echo "  ${GREEN}Option 1: Use Staging Environment for Testing${NC}"
+        echo "    • Run: sudo bash install.sh (select option 2 when asked)"
+        echo "    • Staging certificates don't count toward rate limit"
+        echo "    • Perfect for testing and development"
+        echo ""
+        echo "  ${GREEN}Option 2: Wait Until Rate Limit Resets${NC}"
+        echo "    • Wait until: ${CYAN}$RETRY_DATE${NC}"
+        echo "    • Then run installer again"
+        echo ""
+        echo "  ${GREEN}Option 3: Use Self-Signed Certificate (Now)${NC}"
+        echo "    • Works immediately"
+        echo "    • Browser will show security warning"
+        echo "    • Good for development/testing"
+        echo ""
+        echo -e "${YELLOW}Learn more:${NC} https://letsencrypt.org/docs/rate-limits/"
+        echo ""
+
+        rm -f "$CERTBOT_LOG"
+
+        read -p "$(echo -e ${YELLOW}Use self-signed certificate for now? ${NC}[Y/n]: )" -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            log_info "Creating self-signed certificate..."
+            setup_self_signed_ssl
+            return 1
+        else
+            log_error "Installation cannot continue without SSL certificate"
+            exit 1
+        fi
+    fi
+
+    # Check if certificate was successfully obtained
     if [ $CERT_EXIT -eq 0 ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        rm -f "$CERTBOT_LOG"
         log_success "SSL certificate obtained successfully!"
-        log_warning "Manual DNS challenge certificates require manual renewal"
-        log_info "Certificate expires in 90 days - you'll need to run certbot again"
+
+        if [ "$CERT_ENV" = "2" ]; then
+            log_warning "This is a STAGING certificate (not trusted by browsers)"
+            log_info "To get a production certificate, wait for rate limit reset"
+        else
+            log_warning "Manual DNS challenge certificates require manual renewal"
+            log_info "Certificate expires in 90 days - you'll need to run certbot again"
+        fi
+
         setup_cert_renewal
         return 0
     else
+        rm -f "$CERTBOT_LOG"
         log_error "Failed to obtain SSL certificate"
         log_info "Falling back to self-signed certificate..."
         setup_self_signed_ssl
@@ -1298,6 +1395,317 @@ EOF
     log_success "Auto-renewal configured (checks twice daily)"
 }
 
+# Cloudflare Origin Certificate Setup
+setup_cloudflare_origin_cert() {
+    log_step "Cloudflare Origin Certificate Setup"
+
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║  Cloudflare Origin Certificate - 15 Years, No Rate Limit ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Benefits:${NC}"
+    echo "  ✓ Valid for 15 years (no renewal needed)"
+    echo "  ✓ NO rate limits"
+    echo "  ✓ Automatic wildcard support"
+    echo "  ✓ Works with Nginx"
+    echo "  ✓ Free forever"
+    echo ""
+    echo -e "${YELLOW}Requirements:${NC}"
+    echo "  • Domain must be added to Cloudflare (free)"
+    echo "  • Cloudflare proxy (orange cloud) must be enabled"
+    echo "  • SSL/TLS mode must be set to 'Full (strict)'"
+    echo ""
+
+    if ! confirm "Have you added $DOMAIN to Cloudflare and updated nameservers?"; then
+        log_warning "You need to add your domain to Cloudflare first"
+        echo ""
+        echo -e "${CYAN}Steps to add domain to Cloudflare:${NC}"
+        echo "  1. Go to: https://dash.cloudflare.com"
+        echo "  2. Click 'Add a Site'"
+        echo "  3. Enter domain: $DOMAIN"
+        echo "  4. Select Free Plan"
+        echo "  5. Update nameservers at your domain registrar"
+        echo "  6. Wait 5-30 minutes for propagation"
+        echo ""
+
+        if ! confirm "Continue anyway? (Setup will fail if not configured)"; then
+            setup_self_signed_ssl
+            return 1
+        fi
+    fi
+
+    echo ""
+    echo -e "${CYAN}Generate Cloudflare Origin Certificate:${NC}"
+    echo ""
+    echo "  1. Go to: ${BLUE}https://dash.cloudflare.com${NC}"
+    echo "  2. Select your domain: ${CYAN}$DOMAIN${NC}"
+    echo "  3. Navigate to: ${YELLOW}SSL/TLS → Origin Server${NC}"
+    echo "  4. Click: ${GREEN}Create Certificate${NC}"
+    echo ""
+    echo -e "${CYAN}Certificate Configuration:${NC}"
+    echo "  • Private key type: ${YELLOW}RSA (2048)${NC}"
+    echo "  • Hostnames: ${CYAN}$DOMAIN, *.$DOMAIN${NC}"
+    echo "  • Certificate validity: ${GREEN}15 years${NC}"
+    echo ""
+    echo "  5. Click ${GREEN}Create${NC}"
+    echo ""
+
+    if ! confirm "Have you generated the Origin Certificate?"; then
+        log_error "Please generate the certificate first"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Create SSL directory
+    mkdir -p /etc/nginx/ssl
+    chmod 755 /etc/nginx/ssl
+
+    # Get Origin Certificate
+    echo ""
+    log_info "Please copy the ORIGIN CERTIFICATE from Cloudflare..."
+    echo -e "${YELLOW}(Copy ENTIRE content including -----BEGIN CERTIFICATE----- and -----END CERTIFICATE-----)${NC}"
+    echo ""
+    echo "Press Enter when ready, then paste the certificate (Ctrl+D when done):"
+    read -r
+
+    CERT_FILE="/etc/nginx/ssl/$DOMAIN.cert"
+    cat > "$CERT_FILE"
+
+    if [ ! -s "$CERT_FILE" ]; then
+        log_error "Certificate file is empty!"
+        rm -f "$CERT_FILE"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Validate certificate format
+    if ! openssl x509 -in "$CERT_FILE" -noout 2>/dev/null; then
+        log_error "Invalid certificate format!"
+        rm -f "$CERT_FILE"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    chmod 644 "$CERT_FILE"
+    log_success "Origin Certificate saved"
+
+    # Get Private Key
+    echo ""
+    log_info "Please copy the PRIVATE KEY from Cloudflare..."
+    echo -e "${YELLOW}(Copy ENTIRE content including -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----)${NC}"
+    echo ""
+    echo "Press Enter when ready, then paste the private key (Ctrl+D when done):"
+    read -r
+
+    KEY_FILE="/etc/nginx/ssl/$DOMAIN.key"
+    cat > "$KEY_FILE"
+
+    if [ ! -s "$KEY_FILE" ]; then
+        log_error "Private key file is empty!"
+        rm -f "$KEY_FILE" "$CERT_FILE"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Validate private key format
+    if ! openssl rsa -in "$KEY_FILE" -check -noout 2>/dev/null; then
+        log_error "Invalid private key format!"
+        rm -f "$KEY_FILE" "$CERT_FILE"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    chmod 600 "$KEY_FILE"
+    log_success "Private Key saved and secured"
+
+    # Verify certificate and key match
+    CERT_MODULUS=$(openssl x509 -noout -modulus -in "$CERT_FILE" 2>/dev/null | openssl md5)
+    KEY_MODULUS=$(openssl rsa -noout -modulus -in "$KEY_FILE" 2>/dev/null | openssl md5)
+
+    if [ "$CERT_MODULUS" != "$KEY_MODULUS" ]; then
+        log_error "Certificate and Private Key do not match!"
+        rm -f "$KEY_FILE" "$CERT_FILE"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    log_success "Certificate and Private Key validated successfully!"
+
+    # Update .env to use Cloudflare certificate
+    sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=$KEY_FILE|g" "$INSTALL_DIR/.env"
+    sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=$CERT_FILE|g" "$INSTALL_DIR/.env"
+
+    # Show final instructions
+    echo ""
+    echo -e "${GREEN}✓ Cloudflare Origin Certificate installed successfully!${NC}"
+    echo ""
+    echo -e "${CYAN}IMPORTANT - Complete Cloudflare Configuration:${NC}"
+    echo ""
+    echo "  1. ${YELLOW}Enable Cloudflare Proxy (Orange Cloud):${NC}"
+    echo "     • Go to: ${BLUE}DNS → Records${NC}"
+    echo "     • Enable orange cloud for:"
+    echo "       - Type A, Name: ${CYAN}$DOMAIN${NC} → Click to turn ${YELLOW}Proxied${NC}"
+    echo "       - Type A, Name: ${CYAN}*${NC} → Click to turn ${YELLOW}Proxied${NC}"
+    echo ""
+    echo "  2. ${YELLOW}Set SSL/TLS Mode to Full (strict):${NC}"
+    echo "     • Go to: ${BLUE}SSL/TLS → Overview${NC}"
+    echo "     • Select: ${GREEN}Full (strict)${NC}"
+    echo ""
+    echo -e "${GREEN}Certificate Details:${NC}"
+    echo "  • Validity: ${CYAN}15 years${NC} (no renewal needed!)"
+    echo "  • Wildcard: ${CYAN}✓ Supported${NC} (*.$DOMAIN)"
+    echo "  • Rate Limit: ${GREEN}NONE${NC}"
+    echo "  • Certificate: ${BLUE}$CERT_FILE${NC}"
+    echo "  • Private Key: ${BLUE}$KEY_FILE${NC}"
+    echo ""
+
+    return 0
+}
+
+# acme.sh with Cloudflare API Setup
+setup_acme_sh() {
+    log_step "acme.sh with Cloudflare API Setup"
+
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║       acme.sh - Automatic DNS Challenge with API         ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Benefits:${NC}"
+    echo "  ✓ Automatic DNS challenge (no manual TXT records)"
+    echo "  ✓ Automatic renewal every 60 days"
+    echo "  ✓ Wildcard certificate support"
+    echo "  ✓ Can use ZeroSSL (no rate limits)"
+    echo ""
+    echo -e "${YELLOW}Requirements:${NC}"
+    echo "  • Cloudflare account (free)"
+    echo "  • Cloudflare API Token"
+    echo ""
+
+    # Install acme.sh if not exists
+    if [ ! -d "/root/.acme.sh" ]; then
+        log_info "Installing acme.sh..."
+
+        if ! curl -sSL https://get.acme.sh | sh -s email="$ADMIN_EMAIL" >/dev/null 2>&1; then
+            log_error "Failed to install acme.sh"
+            setup_self_signed_ssl
+            return 1
+        fi
+
+        # Source acme.sh
+        source ~/.bashrc 2>/dev/null || true
+
+        log_success "acme.sh installed"
+    else
+        log_info "acme.sh already installed"
+    fi
+
+    ACME="/root/.acme.sh/acme.sh"
+
+    # Get Cloudflare API credentials
+    echo ""
+    echo -e "${CYAN}Get Cloudflare API Token:${NC}"
+    echo ""
+    echo "  1. Go to: ${BLUE}https://dash.cloudflare.com/profile/api-tokens${NC}"
+    echo "  2. Click: ${GREEN}Create Token${NC}"
+    echo "  3. Use template: ${YELLOW}Edit zone DNS${NC}"
+    echo "  4. Zone Resources: ${CYAN}Include → Specific zone → $DOMAIN${NC}"
+    echo "  5. Click: ${GREEN}Continue to summary${NC} → ${GREEN}Create Token${NC}"
+    echo "  6. Copy the token (starts with: ${YELLOW}ey...${NC})"
+    echo ""
+
+    read -p "Enter Cloudflare API Token: " CF_Token
+
+    if [ -z "$CF_Token" ]; then
+        log_error "API Token is required"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    export CF_Token="$CF_Token"
+
+    # Ask for certificate provider
+    echo ""
+    echo -e "${CYAN}Certificate Provider:${NC}"
+    echo ""
+    echo "  1. Let's Encrypt (Default, rate limit: 5/week)"
+    echo "  2. ZeroSSL (No strict rate limits)"
+    echo ""
+    read -p "Select provider [1-2] (default: 2): " CERT_PROVIDER
+    CERT_PROVIDER=${CERT_PROVIDER:-2}
+
+    SERVER_FLAG=""
+    if [ "$CERT_PROVIDER" = "2" ]; then
+        log_info "Registering with ZeroSSL..."
+        $ACME --register-account -m "$ADMIN_EMAIL" --server zerossl >/dev/null 2>&1 || true
+        SERVER_FLAG="--server zerossl"
+        log_success "Using ZeroSSL (no strict rate limits)"
+    else
+        log_info "Using Let's Encrypt"
+    fi
+
+    # Issue certificate
+    log_info "Issuing certificate via Cloudflare DNS API..."
+    echo -e "${YELLOW}This may take 1-2 minutes...${NC}"
+    echo ""
+
+    mkdir -p /etc/nginx/ssl
+
+    if ! $ACME --issue --dns dns_cf -d "$DOMAIN" -d "*.$DOMAIN" $SERVER_FLAG 2>&1; then
+        log_error "Failed to issue certificate"
+        log_info "Falling back to self-signed certificate..."
+        unset CF_Token
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    log_success "Certificate issued successfully!"
+
+    # Install certificate to Nginx paths
+    log_info "Installing certificate to Nginx..."
+
+    if ! $ACME --install-cert -d "$DOMAIN" \
+        --key-file "/etc/nginx/ssl/$DOMAIN.key" \
+        --fullchain-file "/etc/nginx/ssl/$DOMAIN.cert" \
+        --reloadcmd "systemctl reload nginx" 2>&1; then
+        log_error "Failed to install certificate"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Secure permissions
+    chmod 600 "/etc/nginx/ssl/$DOMAIN.key"
+    chmod 644 "/etc/nginx/ssl/$DOMAIN.cert"
+
+    # Update .env
+    sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=/etc/nginx/ssl/$DOMAIN.key|g" "$INSTALL_DIR/.env"
+    sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=/etc/nginx/ssl/$DOMAIN.cert|g" "$INSTALL_DIR/.env"
+
+    # Clean up sensitive environment variable
+    unset CF_Token
+
+    log_success "Certificate installed to Nginx!"
+
+    echo ""
+    echo -e "${GREEN}✓ acme.sh setup completed!${NC}"
+    echo ""
+    echo -e "${CYAN}Auto-Renewal:${NC}"
+    echo "  • acme.sh will automatically renew certificates every 60 days"
+    echo "  • Cron job already configured"
+    echo "  • Nginx will auto-reload after renewal"
+    echo ""
+    echo -e "${GREEN}Certificate Details:${NC}"
+    echo "  • Validity: ${CYAN}90 days${NC} (auto-renews at 60 days)"
+    echo "  • Wildcard: ${CYAN}✓ Supported${NC} (*.$DOMAIN)"
+    echo "  • Provider: $([ "$CERT_PROVIDER" = "2" ] && echo "${GREEN}ZeroSSL${NC}" || echo "${CYAN}Let's Encrypt${NC}")"
+    echo "  • Certificate: ${BLUE}/etc/nginx/ssl/$DOMAIN.cert${NC}"
+    echo "  • Private Key: ${BLUE}/etc/nginx/ssl/$DOMAIN.key${NC}"
+    echo ""
+
+    return 0
+}
+
 # Configure Nginx
 configure_nginx() {
     skip_if_complete "nginx_config" "Nginx configuration" && return 0
@@ -1307,8 +1715,18 @@ configure_nginx() {
     if [ "$USE_SSL" = true ]; then
         PROTOCOL="https"
 
-        # Priority: Let's Encrypt > Self-signed
-        if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        # Priority: Cloudflare/acme.sh > Let's Encrypt > Self-signed
+        if [ -f "/etc/nginx/ssl/$DOMAIN.cert" ]; then
+            # Use Cloudflare Origin Certificate or acme.sh certificate
+            SSL_CONFIG="
+    ssl_certificate /etc/nginx/ssl/$DOMAIN.cert;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+"
+            log_info "Using Cloudflare/acme.sh certificate for Nginx"
+        elif [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
             # Use Let's Encrypt certificate
             SSL_CONFIG="
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
@@ -1442,26 +1860,63 @@ setup_pm2() {
         return 1
     }
 
-    # Save PM2 configuration
+    # Setup shared PM2_HOME for accessibility by all users
+    export PM2_HOME="/var/www/.pm2"
+    mkdir -p "$PM2_HOME"
+    chmod 755 "$PM2_HOME"
+
+    log_info "Using shared PM2_HOME: /var/www/.pm2"
+
+    # Set PM2_HOME in environment
+    if ! grep -q "PM2_HOME=" /etc/environment 2>/dev/null; then
+        log_info "Setting PM2_HOME in system environment..."
+        # Add PM2_HOME to /etc/environment
+        echo 'PM2_HOME="/var/www/.pm2"' >> /etc/environment
+    fi
+
+    # Update .env with PM2_HOME
+    if ! grep -q "PM2_HOME=" "$INSTALL_DIR/.env" 2>/dev/null; then
+        echo "PM2_HOME=/var/www/.pm2" >> "$INSTALL_DIR/.env"
+    fi
+
+    # Save PM2 configuration with new home
     "$PM2_BIN" save || {
         log_error "Failed to save PM2 configuration"
         return 1
     }
 
-    # Setup PM2 startup
+    # Setup PM2 startup with shared home
     log_info "Configuring PM2 to start on system boot..."
-    PM2_STARTUP_CMD=$("$PM2_BIN" startup systemd -u root --hp /root 2>&1 | grep "sudo" | sed 's/\[PM2\] //')
+
+    # Generate startup script
+    "$PM2_BIN" startup systemd -u root --hp /root > /tmp/pm2-startup.log 2>&1
+
+    # Extract the command (remove sudo prefix since we're already root)
+    PM2_STARTUP_CMD=$(cat /tmp/pm2-startup.log | grep "sudo env" | head -1 | sed 's/^sudo //')
+
     if [ -n "$PM2_STARTUP_CMD" ]; then
-        # Extract the actual command without "sudo" prefix since we're already root
-        ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed 's/^sudo //')
+        # Modify command to use shared PM2_HOME
+        ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed "s|PM2_HOME=[^ ]*|PM2_HOME=/var/www/.pm2|g")
         if [ -n "$ACTUAL_CMD" ]; then
-            eval "$ACTUAL_CMD" || log_warning "PM2 startup configuration may have issues"
+            eval "$ACTUAL_CMD" 2>/dev/null || log_warning "PM2 startup configuration may have issues"
         fi
-    else
-        log_warning "Could not configure PM2 startup automatically"
     fi
 
-    log_success "PM2 configured and application started"
+    rm -f /tmp/pm2-startup.log
+
+    # Update systemd service to use shared PM2_HOME
+    if [ -f /etc/systemd/system/pm2-root.service ]; then
+        log_info "Updating PM2 systemd service with shared home..."
+        sed -i 's|Environment=PM2_HOME=[^ ]*|Environment=PM2_HOME=/var/www/.pm2|g' /etc/systemd/system/pm2-root.service
+        systemctl daemon-reload
+        log_success "PM2 systemd service updated"
+    fi
+
+    # Ensure permissions are correct
+    chmod -R 755 "$PM2_HOME" 2>/dev/null || true
+
+    log_success "PM2 configured with shared home directory"
+    log_info "PM2_HOME: /var/www/.pm2 (accessible without sudo)"
     mark_step_complete "pm2_setup"
 }
 
