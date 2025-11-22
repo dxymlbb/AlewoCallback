@@ -3,12 +3,27 @@ import { Trash2, RefreshCw, ChevronDown, ChevronUp, Clock, Globe, Download, Filt
 import { formatDistanceToNow } from 'date-fns';
 import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
 import json from 'react-syntax-highlighter/dist/esm/languages/hljs/json';
+import xml from 'react-syntax-highlighter/dist/esm/languages/hljs/xml';
+import javascript from 'react-syntax-highlighter/dist/esm/languages/hljs/javascript';
+import http from 'react-syntax-highlighter/dist/esm/languages/hljs/http';
+import plaintext from 'react-syntax-highlighter/dist/esm/languages/hljs/plaintext';
 import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import socketService from '../services/socket';
+import {
+  detectLanguage,
+  getContentType,
+  formatBodyContent,
+  generateRawHttpRequest,
+  generateRawHttpResponse
+} from '../utils/contentTypeDetector';
 
 SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('xml', xml);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('http', http);
+SyntaxHighlighter.registerLanguage('text', plaintext);
 
 const InteractionsViewer = ({ subdomain }) => {
   const [interactions, setInteractions] = useState([]);
@@ -18,6 +33,7 @@ const InteractionsViewer = ({ subdomain }) => {
   const [filterType, setFilterType] = useState('ALL');
   const [showFilters, setShowFilters] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState('N/A');
+  const [viewMode, setViewMode] = useState({}); // Track view mode per interaction: 'raw' or 'parsed'
 
   // Calculate time remaining
   const getTimeRemaining = () => {
@@ -388,31 +404,79 @@ const InteractionsViewer = ({ subdomain }) => {
                         </div>
                       </div>
 
-                      {Object.keys(item.headers).length > 0 && (
+                      {/* Raw/Parsed View Toggle */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <button
+                          onClick={() => setViewMode({ ...viewMode, [item._id]: 'raw' })}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                            (viewMode[item._id] || 'raw') === 'raw'
+                              ? 'bg-primary-500 text-white'
+                              : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                          }`}
+                        >
+                          Raw HTTP
+                        </button>
+                        <button
+                          onClick={() => setViewMode({ ...viewMode, [item._id]: 'parsed' })}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                            viewMode[item._id] === 'parsed'
+                              ? 'bg-primary-500 text-white'
+                              : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                          }`}
+                        >
+                          Parsed
+                        </button>
+                      </div>
+
+                      {/* Raw HTTP Request View */}
+                      {(viewMode[item._id] || 'raw') === 'raw' && (
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-400 mb-2">Headers</h4>
-                          <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
-                            {JSON.stringify(item.headers, null, 2)}
+                          <h4 className="text-sm font-semibold text-gray-400 mb-2">Raw HTTP Request</h4>
+                          <SyntaxHighlighter language="http" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                            {generateRawHttpRequest(item)}
                           </SyntaxHighlighter>
                         </div>
                       )}
 
-                      {Object.keys(item.query).length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-400 mb-2">Query Parameters</h4>
-                          <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
-                            {JSON.stringify(item.query, null, 2)}
-                          </SyntaxHighlighter>
-                        </div>
-                      )}
+                      {/* Parsed View */}
+                      {viewMode[item._id] === 'parsed' && (
+                        <>
+                          {Object.keys(item.headers || {}).length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-400 mb-2">Headers</h4>
+                              <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                {JSON.stringify(item.headers, null, 2)}
+                              </SyntaxHighlighter>
+                            </div>
+                          )}
 
-                      {item.bodyRaw && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-400 mb-2">Request Body</h4>
-                          <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
-                            {item.bodyRaw}
-                          </SyntaxHighlighter>
-                        </div>
+                          {Object.keys(item.query || {}).length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-400 mb-2">Query Parameters</h4>
+                              <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                {JSON.stringify(item.query, null, 2)}
+                              </SyntaxHighlighter>
+                            </div>
+                          )}
+
+                          {item.bodyRaw && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-400 mb-2">
+                                Request Body
+                                <span className="ml-2 text-xs text-gray-500">
+                                  ({getContentType(item.headers) || 'unknown content-type'})
+                                </span>
+                              </h4>
+                              <SyntaxHighlighter
+                                language={detectLanguage(getContentType(item.headers), item.bodyRaw)}
+                                style={atomOneDark}
+                                customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}
+                              >
+                                {formatBodyContent(item.bodyRaw, getContentType(item.headers))}
+                              </SyntaxHighlighter>
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* Response Section */}
@@ -438,24 +502,48 @@ const InteractionsViewer = ({ subdomain }) => {
                               </span>
                             </div>
 
-                            {/* Response Headers */}
-                            {item.response.headers && Object.keys(item.response.headers).length > 0 && (
+                            {/* Raw HTTP Response View */}
+                            {(viewMode[item._id] || 'raw') === 'raw' && (
                               <div>
-                                <h5 className="text-sm font-semibold text-gray-400 mb-2">Response Headers</h5>
-                                <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
-                                  {JSON.stringify(item.response.headers, null, 2)}
+                                <h5 className="text-sm font-semibold text-gray-400 mb-2">Raw HTTP Response</h5>
+                                <SyntaxHighlighter language="http" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                  {generateRawHttpResponse(item.response)}
                                 </SyntaxHighlighter>
                               </div>
                             )}
 
-                            {/* Response Body */}
-                            {item.response.bodyRaw && (
-                              <div>
-                                <h5 className="text-sm font-semibold text-gray-400 mb-2">Response Body</h5>
-                                <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
-                                  {item.response.bodyRaw}
-                                </SyntaxHighlighter>
-                              </div>
+                            {/* Parsed Response View */}
+                            {viewMode[item._id] === 'parsed' && (
+                              <>
+                                {/* Response Headers */}
+                                {item.response.headers && Object.keys(item.response.headers).length > 0 && (
+                                  <div>
+                                    <h5 className="text-sm font-semibold text-gray-400 mb-2">Response Headers</h5>
+                                    <SyntaxHighlighter language="json" style={atomOneDark} customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+                                      {JSON.stringify(item.response.headers, null, 2)}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                )}
+
+                                {/* Response Body */}
+                                {item.response.bodyRaw && (
+                                  <div>
+                                    <h5 className="text-sm font-semibold text-gray-400 mb-2">
+                                      Response Body
+                                      <span className="ml-2 text-xs text-gray-500">
+                                        ({getContentType(item.response.headers) || 'unknown content-type'})
+                                      </span>
+                                    </h5>
+                                    <SyntaxHighlighter
+                                      language={detectLanguage(getContentType(item.response.headers), item.response.bodyRaw)}
+                                      style={atomOneDark}
+                                      customStyle={{ borderRadius: '0.5rem', fontSize: '0.875rem' }}
+                                    >
+                                      {formatBodyContent(item.response.bodyRaw, getContentType(item.response.headers))}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
