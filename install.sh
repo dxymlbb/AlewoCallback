@@ -1768,7 +1768,9 @@ server {
 
 $(if [ "$USE_SSL" = true ]; then echo "    listen 443 ssl http2;"; echo "$SSL_CONFIG"; fi)
 
-$(if [ "$USE_SSL" = true ]; then echo "    # Redirect HTTP to HTTPS"; echo "    if (\$scheme != \"https\") {"; echo "        return 301 https://\$host\$request_uri;"; echo "    }"; fi)
+    # NOTE: Both HTTP and HTTPS are supported - no forced redirect
+    # This allows users to test with either protocol based on their needs
+    # For callback testing, both protocols should work independently
 
     client_max_body_size 10M;
 
