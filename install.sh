@@ -1018,8 +1018,8 @@ setup_ssl() {
             echo ""
             echo -e "${CYAN}Existing Certificate Options:${NC}"
             echo ""
-            echo "  1. Use existing Let's Encrypt certificate"
-            echo "  2. Delete and create new Let's Encrypt certificate (DNS Challenge)"
+            echo "  1. Delete and create new certificate (Fresh Install)"
+            echo "  2. Use existing certificate (Skip SSL setup)"
             echo ""
 
             read -p "Select option [1-2] (default: 1): " CERT_OPTION
@@ -1027,28 +1027,47 @@ setup_ssl() {
 
             case $CERT_OPTION in
                 1)
-                    log_info "Using existing Let's Encrypt certificate"
-                    mark_step_complete "ssl_setup"
-                    return 0
-                    ;;
-                2)
                     log_warning "This will delete the existing certificate and create a new one"
                     if confirm "Continue?"; then
                         # Delete old certificate
-                        certbot delete --cert-name "$DOMAIN" --non-interactive
+                        log_info "Deleting existing certificate..."
+                        certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
                         rm -rf "/etc/letsencrypt/live/$DOMAIN"
                         rm -rf "/etc/letsencrypt/archive/$DOMAIN"
                         rm -rf "/etc/letsencrypt/renewal/$DOMAIN.conf"
-                        log_info "Old certificate deleted"
-                        setup_letsencrypt_dns_challenge
+                        log_success "Old certificate deleted"
+
+                        # Now proceed with fresh install
+                        echo ""
+                        echo -e "${CYAN}SSL Setup Options:${NC}"
+                        echo ""
+                        echo "  1. Let's Encrypt with DNS Challenge (Recommended for wildcard)"
+                        echo "  2. Let's Encrypt with HTTP Challenge (No wildcard support)"
+                        echo "  3. Self-signed Certificate (Development only)"
+                        echo ""
+
+                        read -p "Select option [1-3] (default: 1): " SSL_FRESH_OPTION
+                        SSL_FRESH_OPTION=${SSL_FRESH_OPTION:-1}
+
+                        case $SSL_FRESH_OPTION in
+                            1) setup_letsencrypt_dns_challenge ;;
+                            2) setup_letsencrypt_http_challenge ;;
+                            3) setup_self_signed_ssl ;;
+                            *) setup_letsencrypt_dns_challenge ;;
+                        esac
                     else
-                        log_info "Using existing certificate"
+                        log_info "Keeping existing certificate"
                         mark_step_complete "ssl_setup"
                         return 0
                     fi
                     ;;
+                2)
+                    log_info "Using existing certificate (skipping SSL setup)"
+                    mark_step_complete "ssl_setup"
+                    return 0
+                    ;;
                 *)
-                    log_info "Using existing certificate"
+                    log_info "Using existing certificate (skipping SSL setup)"
                     mark_step_complete "ssl_setup"
                     return 0
                     ;;

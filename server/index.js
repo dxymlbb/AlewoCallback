@@ -25,6 +25,10 @@ dotenv.config();
 
 // Initialize express app
 const app = express();
+
+// Trust proxy - required when behind Nginx/reverse proxy
+app.set('trust proxy', true);
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {

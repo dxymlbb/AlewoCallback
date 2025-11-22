@@ -344,6 +344,25 @@ cmd_restart() {
         exit 1
     fi
 
+    # Sync latest code from repository to installation directory
+    if [ -d "/home/user/AlewoCallback" ]; then
+        log_info "Syncing latest code to installation directory..."
+
+        # Copy server files
+        cp -r /home/user/AlewoCallback/server/* "$INSTALL_DIR/server/" 2>/dev/null || true
+
+        # Copy client build
+        if [ -d "/home/user/AlewoCallback/client/dist" ]; then
+            cp -r /home/user/AlewoCallback/client/dist/* "$INSTALL_DIR/client/dist/" 2>/dev/null || true
+        fi
+
+        # Copy package files
+        cp /home/user/AlewoCallback/package.json "$INSTALL_DIR/" 2>/dev/null || true
+        cp /home/user/AlewoCallback/.env "$INSTALL_DIR/" 2>/dev/null || true
+
+        log_success "Code synced successfully"
+    fi
+
     # Restart via PM2
     if is_pm2_running; then
         log_info "Restarting HTTP/HTTPS Server..."
