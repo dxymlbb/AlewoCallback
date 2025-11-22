@@ -554,13 +554,19 @@ SSL_CERT_PATH=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 FILE_CLEANUP_TIME=$FILE_CLEANUP_TIME
 EOF
 
-    # Create client .env
+    # Create client .env with correct protocol based on SSL setting
+    local API_PROTOCOL="http"
+    if [ "$USE_SSL" = true ]; then
+        API_PROTOCOL="https"
+    fi
+
     cat > client/.env <<EOF
-VITE_API_URL=https://$DOMAIN
+VITE_API_URL=${API_PROTOCOL}://$DOMAIN
 VITE_BASE_DOMAIN=$DOMAIN
 EOF
 
     log_success "Environment configuration created"
+    log_info "Frontend will connect to: ${API_PROTOCOL}://$DOMAIN"
     mark_step_complete "setup_application"
 }
 
