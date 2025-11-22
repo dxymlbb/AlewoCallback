@@ -570,22 +570,47 @@ cmd_uninstall() {
 
     # 7. Remove SSL certificates
     log_info "Removing SSL certificates..."
+
+    # Remove Let's Encrypt certificates
     if [ -d "/etc/letsencrypt/live" ]; then
         # Find and remove all certificates for this installation
         for domain in /etc/letsencrypt/live/*; do
             if [ -d "$domain" ]; then
                 domain_name=$(basename "$domain")
-                log_info "  Removing certificate for: $domain_name"
+                log_info "  Removing Let's Encrypt certificate for: $domain_name"
                 certbot delete --cert-name "$domain_name" --non-interactive 2>/dev/null || true
             fi
         done
     fi
+
+    # Remove Cloudflare/acme.sh certificates
+    if [ -d "/etc/nginx/ssl" ]; then
+        log_info "  Removing Cloudflare/acme.sh certificates..."
+        rm -rf /etc/nginx/ssl 2>/dev/null || true
+    fi
+
+    # Remove self-signed certificates
     rm -rf /etc/ssl/alewo-callback 2>/dev/null || true
+
+    # Remove acme.sh installation (optional - ask user)
+    if [ -d "/root/.acme.sh" ]; then
+        read -p "$(echo -e ${YELLOW}Remove acme.sh installation? ${NC}[y/N]: )" -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "  Removing acme.sh..."
+            /root/.acme.sh/acme.sh --uninstall 2>/dev/null || true
+            rm -rf /root/.acme.sh 2>/dev/null || true
+            log_success "acme.sh removed"
+        else
+            log_info "  Keeping acme.sh installation"
+        fi
+    fi
+
     log_success "SSL certificates removed"
 
     # 8. Remove cron jobs
     log_info "Removing cron jobs..."
-    (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback") | crontab - 2>/dev/null || true
+    (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback" | grep -v "acme.sh") | crontab - 2>/dev/null || true
     log_success "Cron jobs removed"
 
     # 9. Restore systemd-resolved (if disabled during installation)
