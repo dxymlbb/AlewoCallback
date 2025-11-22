@@ -1,96 +1,105 @@
 # AlewoCallback
 
-**Modern Out-of-Band (OOB) Callback Service** for detecting blind vulnerabilities (SSRF, XXE, SQL Injection) similar to Burp Collaborator. Monitor DNS queries and HTTP requests in real-time with IP geolocation tracking.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange.svg)](https://ubuntu.com)
+[![Node.js](https://img.shields.io/badge/node.js-18%2B-brightgreen.svg)](https://nodejs.org)
+[![MongoDB](https://img.shields.io/badge/mongodb-6.0%2B-green.svg)](https://mongodb.com)
 
-## ✨ Key Features
+```
+ ▄▄▄       ██▓    ▓█████  █     █░ ▒█████      ▄████▄   ▄▄▄       ██▓     ██▓     ▄▄▄▄    ▄▄▄       ▄████▄   ██ ▄█▀
+▒████▄    ▓██▒    ▓█   ▀ ▓█░ █ ░█░▒██▒  ██▒   ▒██▀ ▀█  ▒████▄    ▓██▒    ▓██▒    ▓█████▄ ▒████▄    ▒██▀ ▀█   ██▄█▒
+▒██  ▀█▄  ▒██░    ▒███   ▒█░ █ ░█ ▒██░  ██▒   ▒▓█    ▄ ▒██  ▀█▄  ▒██░    ▒██░    ▒██▒ ▄██▒██  ▀█▄  ▒▓█    ▄ ▓███▄░
+░██▄▄▄▄██ ▒██░    ▒▓█  ▄ ░█░ █ ░█ ▒██   ██░   ▒▓▓▄ ▄██▒░██▄▄▄▄██ ▒██░    ▒██░    ▒██░█▀  ░██▄▄▄▄██ ▒▓▓▄ ▄██▒▓██ █▄
+ ▓█   ▓██▒░██████▒░▒████▒░░██▒██▓ ░ ████▓▒░   ▒ ▓███▀ ░ ▓█   ▓██▒░██████▒░██████▒░▓█  ▀█▓ ▓█   ▓██▒▒ ▓███▀ ░▒██▒ █▄
+ ▒▒   ▓▒█░░ ▒░▓  ░░░ ▒░ ░░ ▓░▒ ▒  ░ ▒░▒░▒░    ░ ░▒ ▒  ░ ▒▒   ▓▒█░░ ▒░▓  ░░ ▒░▓  ░░▒▓███▀▒ ▒▒   ▓▒█░░ ░▒ ▒  ░▒ ▒▒ ▓▒
+  ▒   ▒▒ ░░ ░ ▒  ░ ░ ░  ░  ▒ ░ ░    ░ ▒ ▒░      ░  ▒     ▒   ▒▒ ░░ ░ ▒  ░░ ░ ▒  ░▒░▒   ░   ▒   ▒▒ ░  ░  ▒   ░ ░▒ ▒░
+  ░   ▒     ░ ░      ░     ░   ░  ░ ░ ░ ▒     ░          ░   ▒     ░ ░     ░ ░    ░    ░   ░   ▒   ░        ░ ░░ ░
+      ░  ░    ░  ░   ░  ░    ░        ░ ░     ░ ░            ░  ░    ░  ░    ░  ░ ░            ░  ░░ ░      ░  ░
+                                               ░                                        ░            ░
+```
 
-### Core Functionality
-- **DNS Server (Port 53)**: Capture all DNS query types (A, AAAA, TXT, MX, CNAME, NS, SOA, PTR)
-- **HTTP/HTTPS Monitoring**: Capture all methods (GET, POST, PUT, DELETE, etc.) with full request details
-- **Combined Timeline**: Unified view of DNS + HTTP interactions
-- **IP Geolocation**: Automatic location tracking (country, region, city, coordinates) for all requests
-- **Real-time Updates**: Live notifications via Socket.IO
+**AlewoCallback** is a self-hosted, open-source Out-of-Band (OOB) interaction server for security testing, developed by **Alewo Security**. Designed as an alternative to Burp Collaborator, it captures DNS queries and HTTP/HTTPS requests in real-time, helping security researchers detect blind vulnerabilities like SSRF, XXE, and SQL injection.
 
-### Subdomain Management
-- **Random Subdomains**: Auto-expire after 10 minutes (fixed)
-- **Custom Subdomains**: User-defined expiry from 1 minute to 7 days
-- **Auto-cleanup**: Cascading deletion of related data
+The tool provides complete control over your callback infrastructure with automatic IP geolocation, script generation, and advanced interaction monitoring.
 
-### Script Generator
-Generate testing payloads with multiple templates:
-- **Shell**: bash, sh
-- **Backdoors**: PHP, JSP, ASPX
-- **Command scripts**: BAT, PowerShell, Python
-- **Web payloads**: HTML, JavaScript, XML
-- **SQL injection**: MSSQL, MySQL, Oracle
+---
 
-Scripts auto-delete after 5 minutes for security.
+## Features
 
-### Data Export & Analysis
-- Export interactions as **JSON** or **CSV** (includes geolocation & DNS query types)
-- Search and filter by type, IP, or custom criteria
-- View detailed request information (headers, body, metadata)
+### **Deep Interaction Monitoring**
+Unlike traditional callback services, AlewoCallback doesn't just log requests—it provides comprehensive context. Full DNS query type support (A, AAAA, TXT, MX, CNAME, NS, SOA, PTR), complete HTTP/HTTPS request capture with headers and body, and automatic IP geolocation with country, region, city, and coordinates.
 
-### Security
-- **JWT Authentication** (registration disabled - admin-only access)
-- **SSL/HTTPS Support** via Let's Encrypt
-- Rate limiting and input validation
-- Secure password hashing with bcrypt
+### **Dynamic Subdomain Management**
+Create random subdomains with automatic 10-minute expiration or custom subdomains with user-defined TTL (1 minute to 7 days). All interactions are tracked in a unified timeline with cascading cleanup when subdomains expire.
 
-## 🚀 Quick Start
+### **Script Generator**
+Built-in payload generator with multiple templates: Shell scripts (bash, sh), backdoors (PHP, JSP, ASPX), command scripts (BAT, PowerShell, Python), web payloads (HTML, JavaScript, XML), and SQL injection payloads (MSSQL, MySQL, Oracle). Scripts auto-delete after 5 minutes for operational security.
 
-### Installation (One Command)
+### **Self-Hosted & Privacy-Focused**
+Complete control over your infrastructure. No third-party logging, no data leakage to external services. JWT-based authentication with admin-only access, SSL/HTTPS support via Let's Encrypt, and secure password hashing with bcrypt.
+
+### **Export & Analysis**
+Export all interactions as JSON or CSV with full geolocation data. Search and filter by type, IP, method, or custom criteria. Real-time updates via WebSocket for instant notification of new interactions.
+
+AlewoCallback currently supports HTTP/HTTPS protocols and DNS via a plugin-based system, making it straightforward to extend.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Operating System**: Ubuntu 20.04+ or Debian 11+
+- **Resources**: 1GB RAM minimum (2GB+ recommended), 10GB disk space
+- **Access**: Root or sudo privileges
+- **Domain**: Custom domain with DNS access (optional, can use IP)
+
+### Installation
+
+One-command installation with interactive setup:
 
 ```bash
-# Clone repository
 git clone https://github.com/your-org/AlewoCallback.git
 cd AlewoCallback
-
-# Run interactive installer
 sudo bash install.sh
 ```
 
 The installer will:
-- ✅ Install dependencies (Node.js, MongoDB, Nginx)
-- ✅ Configure environment variables
-- ✅ Create administrator account
-- ✅ Setup SSL/HTTPS (optional with dynamic DNS provider detection)
-- ✅ Configure DNS and firewall
-- ✅ Install `alewo-callback` command globally
+- Install dependencies (Node.js 18+, MongoDB 6.0+, Nginx)
+- Configure environment variables and SSL certificates
+- Create administrator account with JWT authentication
+- Setup DNS server (port 53) and HTTP/HTTPS server
+- Configure firewall rules (UFW)
+- Install `alewo-callback` management command globally
 
-**Installation time:** 5-10 minutes
+**Installation time**: 5-10 minutes
 
-**See [INSTALL.md](INSTALL.md) for complete installation guide.**
+See **[Installation Guide](INSTALL.md)** for detailed instructions and troubleshooting.
 
-### DNS Configuration (MANDATORY for DNS Logging)
+### DNS Configuration (Required for DNS Logging)
 
-**⚠️ IMPORTANT:** To enable DNS query logging (like Burp Collaborator), you **MUST** configure NS delegation!
+⚠️ **Important**: To enable DNS query logging (like Burp Collaborator), you **must** configure NS delegation at your domain registrar.
 
-After installation completes, the installer will show an **interactive NS delegation tutorial** with step-by-step instructions customized for your domain.
+After installation, the installer provides an **interactive NS delegation tutorial** customized for your domain. This step-by-step guide walks you through:
+
+1. Creating child nameservers (glue records)
+2. Changing domain nameservers to point to your server
+3. Verifying DNS propagation
+4. Testing DNS query logging
 
 **Complete guides available:**
-- **[NS Records Setup Guide](docs/NS-RECORDS-SETUP-GUIDE.md)** - MANDATORY for DNS logging
-- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - How to test DNS queries
+- **[NS Records Setup Guide](docs/NS-RECORDS-SETUP-GUIDE.md)** - Comprehensive NS delegation guide
+- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - DNS verification and troubleshooting
 
-## 📋 System Requirements
+Without NS delegation, only HTTP/HTTPS requests will be logged—DNS queries will not appear.
 
-### Minimum
-- **OS**: Ubuntu 20.04+ or Debian 11+
-- **CPU**: 1 Core
-- **RAM**: 1GB
-- **Disk**: 10GB free space
-- **Access**: Root/sudo
+---
 
-### Recommended
-- **OS**: Ubuntu 22.04 LTS
-- **CPU**: 2+ Cores
-- **RAM**: 2GB+
-- **Disk**: 20GB+ free space
-- **Domain**: Custom domain with wildcard DNS (*.yourdomain.com)
+## Usage
 
-## 🎮 Management Commands
+### Management Commands
 
-After installation, use the unified `alewo-callback` command:
+After installation, use the `alewo-callback` command:
 
 ```bash
 # Start all services (HTTP, DNS, MongoDB)
@@ -102,116 +111,100 @@ sudo alewo-callback stop
 # Restart all services
 sudo alewo-callback restart
 
-# Check service status
+# Check service status (no sudo required)
 alewo-callback status
 
 # View logs
 alewo-callback logs
-alewo-callback logs -f                    # Follow logs in real-time
-alewo-callback logs --error               # Show error log
-alewo-callback logs -n 100                # Show last 100 lines
+alewo-callback logs -f              # Follow in real-time
+alewo-callback logs --error         # Error logs only
+alewo-callback logs -n 100          # Last 100 lines
 
 # Uninstall (with backup option)
 sudo alewo-callback uninstall
-
-# Show help
-alewo-callback help
 ```
 
-**Note:** `start`, `stop`, `restart`, and `uninstall` require sudo/root access.
+### Access Dashboard
 
-## 🌐 Usage
-
-### Access the Dashboard
-
-After installation, access at:
 - **With domain**: `https://yourdomain.com`
 - **Without domain**: `http://YOUR_SERVER_IP`
 
-Login with the admin credentials created during installation.
+Login with admin credentials created during installation.
 
-### Create Callback Subdomains
+### Creating Callback Subdomains
 
-#### Random Subdomain (10 min expiry)
+**Random Subdomain** (10-minute expiry):
 1. Click **"Random"** button
-2. Subdomain created automatically (e.g., `abc123xyz.yourdomain.com`)
+2. Subdomain generated automatically (e.g., `abc123xyz.yourdomain.com`)
 3. Auto-expires after 10 minutes
 
-#### Custom Subdomain (1 min - 7 days)
+**Custom Subdomain** (1 minute - 7 days):
 1. Click **"Custom"** button
-2. Enter subdomain name (e.g., `test`)
-3. Set expiry time (1-10080 minutes)
-4. Click **"Create"**
+2. Enter subdomain name and expiry time
+3. Click **"Create"**
 
-### Receive Callbacks
+### Testing Callbacks
 
 Send requests to your subdomain:
 
 ```bash
 # DNS Query
-nslookup test.yourdomain.com
+dig test.yourdomain.com @8.8.8.8
 
 # HTTP Request
-curl https://test.yourdomain.com/path
+curl http://test.yourdomain.com/path
 
-# POST with data
+# HTTPS with POST
 curl -X POST https://test.yourdomain.com/api \
   -H "Content-Type: application/json" \
   -d '{"test": "data"}'
 ```
 
-**All interactions appear in real-time!**
+All interactions appear in real-time on the dashboard with:
+- **DNS**: Query type, source IP, geolocation
+- **HTTP**: Method, path, headers, query params, body, geolocation
 
-### Generate Scripts
+### Generating Scripts
 
 1. Select a subdomain
 2. Click **"Script Generator"**
-3. Choose template type (shell, backdoor, cmd, web, sql)
-4. Choose file format
-5. Click **"Generate"**
-6. **Copy HTTP or HTTPS URL** (choose your protocol)
-7. Access script at: `http://subdomain.domain.com/script/filename.ext`
+3. Choose template type and file format
+4. Click **"Generate"**
+5. Copy HTTP or HTTPS URL
+6. Access at: `http://subdomain.domain.com/script/filename.ext`
 
-**Scripts auto-delete after 5 minutes.**
+Scripts auto-delete after 5 minutes.
 
-### View Interaction Details
+---
 
-Click any interaction to see:
-- **DNS**: Query type (A, TXT, MX, etc.), source IP, geolocation
-- **HTTP**: Method, path, headers, query params, body
-- **Geolocation**: Country, region, city, coordinates
+## Architecture
 
-### Export Data
+### Tech Stack
 
-Click **"Export"** button:
-- **JSON**: Full structured data
-- **CSV**: Spreadsheet format (includes geolocation & query types)
+**Backend**
+- Node.js 18+ with Express.js
+- MongoDB 6.0+ (database)
+- Socket.IO (real-time updates)
+- dns2 (authoritative DNS server)
+- geoip-lite (IP geolocation - offline)
+- JWT (authentication)
+- bcrypt (password hashing)
 
-## 🏗️ Tech Stack
+**Frontend**
+- React 18 with Vite
+- Tailwind CSS (styling)
+- Socket.IO Client (real-time)
+- Axios (HTTP client)
+- React Hot Toast (notifications)
+- React Syntax Highlighter (code display)
 
-### Backend
-- **Node.js** + Express.js
-- **MongoDB** (Database)
-- **Socket.IO** (Real-time)
-- **dns2** (DNS Server)
-- **geoip-lite** (IP Geolocation - offline database)
-- **JWT** (Authentication)
-- **bcrypt** (Password hashing)
+**Infrastructure**
+- Nginx (reverse proxy)
+- Let's Encrypt (SSL/TLS)
+- UFW (firewall)
+- PM2 (process manager)
 
-### Frontend
-- **React 18** + Vite
-- **Tailwind CSS** (Styling)
-- **Socket.IO Client** (Real-time updates)
-- **Axios** (HTTP client)
-- **React Hot Toast** (Notifications)
-- **React Syntax Highlighter** (Code display)
-
-### Infrastructure
-- **Nginx** (Reverse proxy)
-- **Let's Encrypt** (SSL certificates)
-- **UFW** (Firewall)
-
-## 📁 Project Structure
+### Project Structure
 
 ```
 AlewoCallback/
@@ -229,77 +222,51 @@ AlewoCallback/
 │   │   ├── components/    # React components
 │   │   ├── pages/         # Login, Dashboard
 │   │   ├── contexts/      # Auth context
-│   │   └── services/      # API, Socket.IO
+│   │   ├── services/      # API, Socket.IO
+│   │   └── utils/         # Content-type detection
 │   └── dist/              # Built files
-├── alewo-callback         # CLI manager script
+├── docs/                  # Documentation
+│   ├── NS-RECORDS-SETUP-GUIDE.md
+│   └── DNS-TESTING-GUIDE.md
+├── alewo-callback         # CLI management script
 ├── install.sh             # Interactive installer
-├── .env.example           # Server environment template
-├── client/.env.example    # Client environment template
 └── README.md              # This file
 ```
 
-## 🔐 Security Features
+---
 
-### Authentication
-- JWT-based authentication with 30-day tokens
-- Registration **disabled** (admin-only access)
-- Accounts created during installation only
-- Secure password hashing with bcrypt
+## Security Features
 
-### Network Security
-- Firewall configuration (UFW)
-- Rate limiting on API endpoints
-- Input validation and sanitization
-- HTTPS/SSL support via Let's Encrypt
+- **Authentication**: JWT-based with 30-day tokens, registration disabled (admin-only)
+- **Network Security**: Firewall (UFW), rate limiting, input validation, SSL/HTTPS
+- **Data Security**: Auto-expiring resources, cascading deletion, offline geolocation (no external API calls)
+- **Privacy**: Self-hosted, no third-party logging, complete data control
 
-### Data Security
-- Auto-expiring resources (subdomains, scripts)
-- Cascading deletion of related data
-- No sensitive data in logs
-- IP geolocation without external API calls (offline)
+---
 
-## 🛠️ Development
+## Use Cases
 
-### Local Development Setup
+AlewoCallback is designed for:
+- **Penetration Testing**: Detect blind SSRF, XXE, SQL injection, RCE
+- **Bug Bounty Hunting**: Identify out-of-band vulnerabilities
+- **Security Research**: Analyze callback behaviors and exploit chains
+- **Red Team Operations**: Test detection and monitoring capabilities
+- **CTF Competitions**: Practice exploitation techniques
 
-```bash
-# Install dependencies
-npm install
-cd client && npm install && cd ..
+**Always obtain proper authorization before security testing.**
 
-# Setup environment
-cp .env.example .env
-cp client/.env.example client/.env
-# Edit .env files with your settings
+---
 
-# Start MongoDB (if not running)
-sudo systemctl start mongod
+## Documentation
 
-# Start development servers
-npm run dev
-# Backend: http://localhost:3000
-# Frontend: http://localhost:5173
-```
+- **[Installation Guide](INSTALL.md)** - Complete installation instructions
+- **[NS Records Setup](docs/NS-RECORDS-SETUP-GUIDE.md)** - NS delegation (mandatory for DNS logging)
+- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - DNS verification and troubleshooting
+- **[Additional Documentation](docs/)** - Guides and tutorials
 
-### Manual Admin Account Creation
+---
 
-```bash
-# Connect to MongoDB
-mongosh
-
-# Use database
-use alewo-callback
-
-# Create admin user
-db.users.insertOne({
-  username: "admin",
-  email: "admin@example.com",
-  password: "$2a$10$hashedpassword",  // Hash with bcrypt
-  createdAt: new Date()
-})
-```
-
-## 📖 API Endpoints
+## API Endpoints
 
 ### Authentication
 ```
@@ -316,15 +283,7 @@ DELETE /api/subdomains/:id       # Delete subdomain
 PATCH  /api/subdomains/:id/toggle # Toggle active status
 ```
 
-### Callbacks (HTTP)
-```
-GET    /api/callbacks                     # Get all callbacks
-GET    /api/callbacks/subdomain/:id       # Get by subdomain
-DELETE /api/callbacks/:id                 # Delete callback
-DELETE /api/callbacks/subdomain/:id/clear # Clear all for subdomain
-```
-
-### Interactions (Combined DNS + HTTP)
+### Interactions (DNS + HTTP)
 ```
 GET    /api/interactions                     # Get all interactions
 GET    /api/interactions/subdomain/:id       # Get by subdomain
@@ -341,33 +300,63 @@ POST   /api/scripts/custom              # Create custom script
 DELETE /api/scripts/:id                 # Delete script
 ```
 
-## 🎯 Use Cases
+---
 
-This tool is designed for:
-- **Penetration Testing**: Detect blind SSRF, XXE, SQL injection
-- **Bug Bounty Hunting**: Identify OOB vulnerabilities
-- **Security Research**: Analyze callback behaviors
-- **Red Team Operations**: Test detection capabilities
-- **CTF Competitions**: Practice exploitation techniques
+## Troubleshooting
 
-**Always obtain proper authorization before testing.**
+### Services won't start
+```bash
+# Check logs
+alewo-callback logs --error
 
-## 📚 Documentation
+# Verify ports not in use
+sudo netstat -tuln | grep -E ':(53|80|443|3000)'
 
-- **[Installation Guide](INSTALL.md)** - Complete installation instructions
-- **[NS Records Setup](docs/NS-RECORDS-SETUP-GUIDE.md)** - MANDATORY for DNS logging
-- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - How to test DNS queries
-- **[Additional Documentation](docs/)** - More guides and tutorials
+# Restart services
+sudo alewo-callback restart
+```
 
-## 🤝 Contributing
+### DNS queries not captured
+```bash
+# Ensure DNS server is running
+alewo-callback status
+
+# Check port 53 is open
+sudo ufw status | grep 53
+
+# Test DNS server
+dig test.yourdomain.com @YOUR_SERVER_IP
+
+# Verify NS delegation
+dig NS yourdomain.com @8.8.8.8
+```
+
+### SSL certificate issues
+```bash
+# Check SSL configuration
+sudo nginx -t
+
+# Renew certificates
+sudo certbot renew
+
+# Check certificate status
+sudo certbot certificates
+```
+
+---
+
+## Contributing
 
 Contributions are welcome! Please:
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Open a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## 📄 License
+---
+
+## License
 
 MIT License
 
@@ -391,51 +380,19 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## 🐛 Troubleshooting
+---
 
-### Services won't start
-```bash
-# Check logs
-alewo-callback logs --error
-
-# Verify ports are not in use
-sudo netstat -tuln | grep -E ':(53|80|443|3000)'
-
-# Restart services
-sudo alewo-callback restart
-```
-
-### DNS queries not captured
-```bash
-# Ensure DNS server is running
-alewo-callback status
-
-# Check port 53 is open
-sudo ufw status | grep 53
-
-# Test DNS server
-nslookup test.yourdomain.com YOUR_SERVER_IP
-```
-
-### SSL certificate issues
-```bash
-# Check SSL configuration
-sudo nginx -t
-
-# Renew certificates
-sudo certbot renew
-
-# Check certificate status
-sudo certbot certificates
-```
-
-## 📞 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/your-org/AlewoCallback/issues)
 - **Documentation**: [INSTALL.md](INSTALL.md) | [docs/](docs/)
 
 ---
 
+<div align="center">
+
 **AlewoCallback** - Built with ❤️ for security researchers and penetration testers
 
-© 2025 Alewo. All rights reserved.
+**© 2025 Alewo. All rights reserved.**
+
+</div>
