@@ -75,9 +75,9 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
     }
   };
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text, protocol) => {
     navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard!');
+    toast.success(`${protocol ? protocol.toUpperCase() + ' ' : ''}URL copied to clipboard!`);
   };
 
   if (loading) {
@@ -180,11 +180,20 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
 
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => copyToClipboard(`https://${fullDomain}`)}
-                      className="p-2 hover:bg-gray-700 rounded transition-colors"
-                      title="Copy URL"
+                      onClick={() => copyToClipboard(`http://${fullDomain}`, 'http')}
+                      className="px-2 py-1 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
+                      title="Copy HTTP URL"
                     >
-                      <Copy className="w-4 h-4" />
+                      <Copy className="w-3 h-3" />
+                      HTTP
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(`https://${fullDomain}`, 'https')}
+                      className="px-2 py-1 text-xs bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded transition-colors flex items-center gap-1"
+                      title="Copy HTTPS URL"
+                    >
+                      <Copy className="w-3 h-3" />
+                      HTTPS
                     </button>
                     <button
                       onClick={() => toggleActive(subdomain._id)}
