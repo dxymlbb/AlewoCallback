@@ -12,23 +12,28 @@
 <br>
 
 <pre>
-   ▄▀█ █   █▀▀ █ █ █ █▀█
-   █▀█ █▄▄ ██▄ ▀▄▀▄▀ █▄█
-       CALLBACK v1.0
-</pre>
-
-<br>
-
-<pre>
-┌─────────────────────────────────────────┐
-│  Out-of-Band Interaction Server         │
-│  For Security Testing & Pentesting      │
-│                                         │
-│  ✓ DNS Queries Logging (A/TXT/MX/NS)   │
-│  ✓ HTTP/HTTPS Requests Capture         │
-│  ✓ Real-time Geolocation Tracking      │
-│  ✓ SSRF, XXE, SQLi Detection           │
-└─────────────────────────────────────────┘
+╔═════════════════════════════════════════╗
+║                                         ║
+║     █████╗ ██╗     ███████╗██╗    ██╗  ║
+║    ██╔══██╗██║     ██╔════╝██║    ██║  ║
+║    ███████║██║     █████╗  ██║ █╗ ██║  ║
+║    ██╔══██║██║     ██╔══╝  ██║███╗██║  ║
+║    ██║  ██║███████╗███████╗╚███╔███╔╝  ║
+║    ╚═╝  ╚═╝╚══════╝╚══════╝ ╚══╝╚══╝   ║
+║                                         ║
+║          CALLBACK PLATFORM v1.0         ║
+║                                         ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║
+║                                         ║
+║  Out-of-Band Interaction Server         ║
+║  Security Testing & Vulnerability Scan  ║
+║                                         ║
+║  ✓ DNS Query Logging (A/TXT/MX/NS)     ║
+║  ✓ HTTP/HTTPS Request Capture          ║
+║  ✓ Real-time IP Geolocation            ║
+║  ✓ SSRF • XXE • SQLi Detection         ║
+║                                         ║
+╚═════════════════════════════════════════╝
 </pre>
 
 </div>
