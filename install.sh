@@ -1860,26 +1860,63 @@ setup_pm2() {
         return 1
     }
 
-    # Save PM2 configuration
+    # Setup shared PM2_HOME for accessibility by all users
+    export PM2_HOME="/var/www/.pm2"
+    mkdir -p "$PM2_HOME"
+    chmod 755 "$PM2_HOME"
+
+    log_info "Using shared PM2_HOME: /var/www/.pm2"
+
+    # Set PM2_HOME in environment
+    if ! grep -q "PM2_HOME=" /etc/environment 2>/dev/null; then
+        log_info "Setting PM2_HOME in system environment..."
+        # Add PM2_HOME to /etc/environment
+        echo 'PM2_HOME="/var/www/.pm2"' >> /etc/environment
+    fi
+
+    # Update .env with PM2_HOME
+    if ! grep -q "PM2_HOME=" "$INSTALL_DIR/.env" 2>/dev/null; then
+        echo "PM2_HOME=/var/www/.pm2" >> "$INSTALL_DIR/.env"
+    fi
+
+    # Save PM2 configuration with new home
     "$PM2_BIN" save || {
         log_error "Failed to save PM2 configuration"
         return 1
     }
 
-    # Setup PM2 startup
+    # Setup PM2 startup with shared home
     log_info "Configuring PM2 to start on system boot..."
-    PM2_STARTUP_CMD=$("$PM2_BIN" startup systemd -u root --hp /root 2>&1 | grep "sudo" | sed 's/\[PM2\] //')
+
+    # Generate startup script
+    "$PM2_BIN" startup systemd -u root --hp /root > /tmp/pm2-startup.log 2>&1
+
+    # Extract the command (remove sudo prefix since we're already root)
+    PM2_STARTUP_CMD=$(cat /tmp/pm2-startup.log | grep "sudo env" | head -1 | sed 's/^sudo //')
+
     if [ -n "$PM2_STARTUP_CMD" ]; then
-        # Extract the actual command without "sudo" prefix since we're already root
-        ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed 's/^sudo //')
+        # Modify command to use shared PM2_HOME
+        ACTUAL_CMD=$(echo "$PM2_STARTUP_CMD" | sed "s|PM2_HOME=[^ ]*|PM2_HOME=/var/www/.pm2|g")
         if [ -n "$ACTUAL_CMD" ]; then
-            eval "$ACTUAL_CMD" || log_warning "PM2 startup configuration may have issues"
+            eval "$ACTUAL_CMD" 2>/dev/null || log_warning "PM2 startup configuration may have issues"
         fi
-    else
-        log_warning "Could not configure PM2 startup automatically"
     fi
 
-    log_success "PM2 configured and application started"
+    rm -f /tmp/pm2-startup.log
+
+    # Update systemd service to use shared PM2_HOME
+    if [ -f /etc/systemd/system/pm2-root.service ]; then
+        log_info "Updating PM2 systemd service with shared home..."
+        sed -i 's|Environment=PM2_HOME=[^ ]*|Environment=PM2_HOME=/var/www/.pm2|g' /etc/systemd/system/pm2-root.service
+        systemctl daemon-reload
+        log_success "PM2 systemd service updated"
+    fi
+
+    # Ensure permissions are correct
+    chmod -R 755 "$PM2_HOME" 2>/dev/null || true
+
+    log_success "PM2 configured with shared home directory"
+    log_info "PM2_HOME: /var/www/.pm2 (accessible without sudo)"
     mark_step_complete "pm2_setup"
 }
 
