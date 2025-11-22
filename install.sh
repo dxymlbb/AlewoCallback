@@ -1181,12 +1181,35 @@ setup_letsencrypt_dns_challenge() {
     # Stop nginx temporarily
     systemctl stop nginx 2>/dev/null
 
+    # Check if user wants staging/testing environment
+    echo ""
+    echo -e "${YELLOW}⚠️  Let's Encrypt has rate limits:${NC}"
+    echo "  • 5 certificates per domain per week"
+    echo "  • Use staging environment for testing"
+    echo ""
+    echo -e "${CYAN}Certificate Environment:${NC}"
+    echo "  1. Production (real certificate - counts toward rate limit)"
+    echo "  2. Staging (test certificate - does NOT count toward rate limit)"
+    echo ""
+    read -p "Select environment [1-2] (default: 1): " CERT_ENV
+    CERT_ENV=${CERT_ENV:-1}
+
+    STAGING_FLAG=""
+    if [ "$CERT_ENV" = "2" ]; then
+        STAGING_FLAG="--test-cert"
+        log_info "Using Let's Encrypt STAGING environment (test certificate)"
+        log_warning "Staging certificates will show as untrusted in browsers"
+    else
+        log_info "Using Let's Encrypt PRODUCTION environment"
+    fi
+
     # Manual DNS challenge
     echo ""
     log_info "Please follow the instructions carefully..."
     echo ""
 
-    # Run certbot with manual DNS challenge
+    # Run certbot with manual DNS challenge - capture output
+    CERTBOT_LOG="/tmp/certbot-output-$$.log"
     certbot certonly --manual \
         --preferred-challenges dns \
         -d "$DOMAIN" \
@@ -1194,20 +1217,81 @@ setup_letsencrypt_dns_challenge() {
         --email "$ADMIN_EMAIL" \
         --agree-tos \
         --no-eff-email \
-        --manual-public-ip-logging-ok
+        --manual-public-ip-logging-ok \
+        $STAGING_FLAG 2>&1 | tee "$CERTBOT_LOG"
 
     CERT_EXIT=$?
 
     # Start nginx back
     systemctl start nginx 2>/dev/null
 
+    # Check for rate limit error
+    if grep -q "too many certificates" "$CERTBOT_LOG" 2>/dev/null; then
+        # Extract retry date
+        RETRY_DATE=$(grep -oP "retry after \K[^:]*" "$CERTBOT_LOG" 2>/dev/null || echo "unknown")
+
+        echo ""
+        log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_error "Let's Encrypt RATE LIMIT REACHED"
+        log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo -e "${RED}You've reached the Let's Encrypt rate limit!${NC}"
+        echo ""
+        echo -e "${YELLOW}What happened:${NC}"
+        echo "  • Let's Encrypt allows max 5 certificates per domain per week"
+        echo "  • Your domain already has 5 certificates issued recently"
+        echo "  • Retry after: ${CYAN}$RETRY_DATE${NC}"
+        echo ""
+        echo -e "${CYAN}Available Solutions:${NC}"
+        echo ""
+        echo "  ${GREEN}Option 1: Use Staging Environment for Testing${NC}"
+        echo "    • Run: sudo bash install.sh (select option 2 when asked)"
+        echo "    • Staging certificates don't count toward rate limit"
+        echo "    • Perfect for testing and development"
+        echo ""
+        echo "  ${GREEN}Option 2: Wait Until Rate Limit Resets${NC}"
+        echo "    • Wait until: ${CYAN}$RETRY_DATE${NC}"
+        echo "    • Then run installer again"
+        echo ""
+        echo "  ${GREEN}Option 3: Use Self-Signed Certificate (Now)${NC}"
+        echo "    • Works immediately"
+        echo "    • Browser will show security warning"
+        echo "    • Good for development/testing"
+        echo ""
+        echo -e "${YELLOW}Learn more:${NC} https://letsencrypt.org/docs/rate-limits/"
+        echo ""
+
+        rm -f "$CERTBOT_LOG"
+
+        read -p "$(echo -e ${YELLOW}Use self-signed certificate for now? ${NC}[Y/n]: )" -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            log_info "Creating self-signed certificate..."
+            setup_self_signed_ssl
+            return 1
+        else
+            log_error "Installation cannot continue without SSL certificate"
+            exit 1
+        fi
+    fi
+
+    # Check if certificate was successfully obtained
     if [ $CERT_EXIT -eq 0 ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+        rm -f "$CERTBOT_LOG"
         log_success "SSL certificate obtained successfully!"
-        log_warning "Manual DNS challenge certificates require manual renewal"
-        log_info "Certificate expires in 90 days - you'll need to run certbot again"
+
+        if [ "$CERT_ENV" = "2" ]; then
+            log_warning "This is a STAGING certificate (not trusted by browsers)"
+            log_info "To get a production certificate, wait for rate limit reset"
+        else
+            log_warning "Manual DNS challenge certificates require manual renewal"
+            log_info "Certificate expires in 90 days - you'll need to run certbot again"
+        fi
+
         setup_cert_renewal
         return 0
     else
+        rm -f "$CERTBOT_LOG"
         log_error "Failed to obtain SSL certificate"
         log_info "Falling back to self-signed certificate..."
         setup_self_signed_ssl
