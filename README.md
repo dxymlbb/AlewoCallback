@@ -60,7 +60,17 @@ The installer will:
 
 **Installation time:** 5-10 minutes
 
-**See [INSTALL.md](INSTALL.md) for complete guide.**
+**See [INSTALL.md](INSTALL.md) for complete installation guide.**
+
+### DNS Configuration (MANDATORY for DNS Logging)
+
+**⚠️ IMPORTANT:** To enable DNS query logging (like Burp Collaborator), you **MUST** configure NS delegation!
+
+After installation completes, the installer will show an **interactive NS delegation tutorial** with step-by-step instructions customized for your domain.
+
+**Complete guides available:**
+- **[NS Records Setup Guide](docs/NS-RECORDS-SETUP-GUIDE.md)** - MANDATORY for DNS logging
+- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - How to test DNS queries
 
 ## 📋 System Requirements
 
@@ -342,6 +352,13 @@ This tool is designed for:
 
 **Always obtain proper authorization before testing.**
 
+## 📚 Documentation
+
+- **[Installation Guide](INSTALL.md)** - Complete installation instructions
+- **[NS Records Setup](docs/NS-RECORDS-SETUP-GUIDE.md)** - MANDATORY for DNS logging
+- **[DNS Testing Guide](docs/DNS-TESTING-GUIDE.md)** - How to test DNS queries
+- **[Additional Documentation](docs/)** - More guides and tutorials
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please:
@@ -352,7 +369,27 @@ Contributions are welcome! Please:
 
 ## 📄 License
 
-MIT License - see LICENSE file for details
+MIT License
+
+Copyright (c) 2025 Alewo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## 🐛 Troubleshooting
 
@@ -395,8 +432,10 @@ sudo certbot certificates
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/your-org/AlewoCallback/issues)
-- **Documentation**: [INSTALL.md](INSTALL.md)
+- **Documentation**: [INSTALL.md](INSTALL.md) | [docs/](docs/)
 
 ---
 
-**Built with ❤️ for security researchers and penetration testers**
+**AlewoCallback** - Built with ❤️ for security researchers and penetration testers
+
+© 2025 Alewo. All rights reserved.
