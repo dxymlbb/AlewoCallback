@@ -252,6 +252,13 @@ const GlobalInteractions = () => {
                               <div>
                                 <span className="text-gray-500">Location:</span>
                                 <span className="ml-2 text-gray-300">
+                                  {item.geolocation.country && (
+                                    <span className="mr-1">
+                                      {item.geolocation.country.toUpperCase().replace(/./g, char =>
+                                        String.fromCodePoint(127397 + char.charCodeAt())
+                                      )}
+                                    </span>
+                                  )}
                                   {[item.geolocation.city, item.geolocation.region, item.geolocation.country]
                                     .filter(Boolean)
                                     .join(', ')}
@@ -393,6 +400,13 @@ const GlobalInteractions = () => {
                               <div>
                                 <span className="text-gray-500">Location:</span>
                                 <span className="ml-2 text-gray-300">
+                                  {item.geolocation.country && (
+                                    <span className="mr-1">
+                                      {item.geolocation.country.toUpperCase().replace(/./g, char =>
+                                        String.fromCodePoint(127397 + char.charCodeAt())
+                                      )}
+                                    </span>
+                                  )}
                                   {[item.geolocation.city, item.geolocation.region, item.geolocation.country]
                                     .filter(Boolean)
                                     .join(', ')}

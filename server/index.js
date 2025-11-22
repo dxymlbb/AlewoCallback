@@ -25,6 +25,11 @@ dotenv.config();
 
 // Initialize express app
 const app = express();
+
+// Trust proxy - required for correct protocol and IP detection behind Nginx reverse proxy
+// This allows Express to read X-Forwarded-Proto, X-Forwarded-For, and X-Real-IP headers
+app.set('trust proxy', true);
+
 const httpServer = createServer(app);
 // CORS configuration
 const corsOptions = {
