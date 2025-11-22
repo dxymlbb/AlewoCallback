@@ -95,7 +95,15 @@ export const captureCallback = async (req, res, next) => {
     // Get geolocation
     const geolocation = getGeolocation(clientIp);
 
-    // Create callback record
+    // Prepare response data
+    const responseData = {
+      success: true,
+      message: 'Callback received',
+      timestamp: new Date().toISOString()
+    };
+    const responseBodyRaw = JSON.stringify(responseData);
+
+    // Create callback record with response data
     const callback = await Callback.create({
       subdomainId: subdomain._id,
       userId: subdomain.userId,
@@ -108,7 +116,18 @@ export const captureCallback = async (req, res, next) => {
       ip: clientIp,
       geolocation,
       userAgent: req.headers['user-agent'] || '',
-      protocol: req.protocol
+      protocol: req.protocol,
+      // Save response data
+      response: {
+        statusCode: 200,
+        statusMessage: 'OK',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Powered-By': 'AlewoCallback'
+        },
+        body: responseData,
+        bodyRaw: responseBodyRaw
+      }
     });
 
     // Update subdomain last activity
@@ -124,11 +143,7 @@ export const captureCallback = async (req, res, next) => {
     }
 
     // Send response
-    res.status(200).json({
-      success: true,
-      message: 'Callback received',
-      timestamp: new Date().toISOString()
-    });
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Callback handler error:', error);
     res.status(500).send('Internal server error');

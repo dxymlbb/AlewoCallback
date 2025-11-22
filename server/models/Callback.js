@@ -56,6 +56,29 @@ const callbackSchema = new mongoose.Schema({
     enum: ['http', 'https'],
     default: 'http'
   },
+  // Response data sent back to the callback client
+  response: {
+    statusCode: {
+      type: Number,
+      default: 200
+    },
+    statusMessage: {
+      type: String,
+      default: 'OK'
+    },
+    headers: {
+      type: Object,
+      default: {}
+    },
+    body: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    bodyRaw: {
+      type: String,
+      default: ''
+    }
+  },
   timestamp: {
     type: Date,
     default: Date.now

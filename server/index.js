@@ -26,39 +26,60 @@ dotenv.config();
 // Initialize express app
 const app = express();
 const httpServer = createServer(app);
+// CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production'
+    ? (origin, callback) => {
+        // In production, allow same origin and configured origins
+        const allowedOrigins = process.env.ALLOWED_ORIGINS
+          ? process.env.ALLOWED_ORIGINS.split(',')
+          : [];
+
+        // Allow same-origin requests (frontend served from same server)
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, true); // Allow for callback service (needs to accept from anywhere)
+        }
+      }
+    : '*', // Development: allow all
+  credentials: true
+};
+
 const io = new Server(httpServer, {
-  cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : '*',
-    credentials: true
-  }
+  cors: corsOptions
 });
 
 // Store io instance in app
 app.set('io', io);
-
-// Connect to database
-connectDatabase();
-
-// Start cleanup services
-startCleanupService();
-startSubdomainCleanup();
 
 // Middleware
 app.use(helmet({
   contentSecurityPolicy: false // Allow scripts for callback testing
 }));
 
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : '*',
-  credentials: true
-}));
+app.use(cors(corsOptions));
 
 app.use(morgan('dev'));
 
-// Body parsing middleware with raw body capture
+// Body parsing middleware - order matters!
+// 1. Parse JSON content
 app.use(express.json({ limit: '10mb' }));
+// 2. Parse URL-encoded forms
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.text({ type: '*/*', limit: '10mb' }));
+// 3. Parse text for other content types (excluding JSON and urlencoded)
+app.use(express.text({
+  type: ['text/*', 'application/xml', 'application/xhtml+xml'],
+  limit: '10mb'
+}));
+// 4. Capture raw body for any remaining content types
+app.use(express.raw({
+  type: (req) => {
+    // Accept anything that wasn't already parsed
+    return !req.is('json') && !req.is('urlencoded') && !req.is('text/*');
+  },
+  limit: '10mb'
+}));
 
 // Rate limiting for API routes
 const apiLimiter = rateLimit({
@@ -132,22 +153,48 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// Start server with proper async initialization
 const PORT = process.env.PORT || 3000;
 
-httpServer.listen(PORT, () => {
-  console.log('\n========================================');
-  console.log(`🚀 AlewoCallback Server Running`);
-  console.log(`========================================`);
-  console.log(`HTTP Port: ${PORT}`);
-  console.log(`DNS Port: ${process.env.DNS_PORT || 53}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Base Domain: ${process.env.BASE_DOMAIN || 'callback.local'}`);
-  console.log(`SSL Enabled: ${process.env.SSL_ENABLED || 'false'}`);
-  console.log(`========================================\n`);
+const startServer = async () => {
+  try {
+    // 1. Connect to database FIRST
+    console.log('📦 Connecting to MongoDB...');
+    await connectDatabase();
 
-  // Start DNS Server after HTTP server is ready
-  startDNSServer(io);
-});
+    // 2. Start cleanup services after database is ready
+    console.log('🧹 Starting cleanup services...');
+    startCleanupService();
+    startSubdomainCleanup();
+
+    // 3. Start HTTP server
+    await new Promise((resolve) => {
+      httpServer.listen(PORT, () => {
+        console.log('\n========================================');
+        console.log(`🚀 AlewoCallback Server Running`);
+        console.log(`========================================`);
+        console.log(`HTTP Port: ${PORT}`);
+        console.log(`DNS Port: ${process.env.DNS_PORT || 53}`);
+        console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`Base Domain: ${process.env.BASE_DOMAIN || 'callback.local'}`);
+        console.log(`SSL Enabled: ${process.env.SSL_ENABLED || 'false'}`);
+        console.log(`========================================\n`);
+        resolve();
+      });
+    });
+
+    // 4. Start DNS Server LAST (after everything is ready)
+    console.log('🌐 Starting DNS server...');
+    startDNSServer(io);
+
+    console.log('✅ All services started successfully!\n');
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
 
 export default app;

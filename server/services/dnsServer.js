@@ -61,42 +61,49 @@ export const startDNSServer = (io) => {
         const subdomainStr = extractSubdomain(name, baseDomain);
 
         if (subdomainStr) {
-          // Find subdomain in database
-          const subdomain = await Subdomain.findOne({
-            subdomain: subdomainStr,
-            isActive: true,
-            expiresAt: { $gt: new Date() } // Not expired
-          });
-
-          if (subdomain) {
-            // Get geolocation from source IP
-            const geolocation = getGeolocation(rinfo.address);
-
-            // Log DNS query to database
-            const dnsQuery = await DNSQuery.create({
-              subdomainId: subdomain._id,
-              userId: subdomain.userId,
-              query: name,
-              queryType: Packet.TYPE[type] || 'UNKNOWN',
-              sourceIP: rinfo.address,
-              geolocation,
-              response: serverIP,
-              timestamp: new Date()
+          try {
+            // Find subdomain in database
+            const subdomain = await Subdomain.findOne({
+              subdomain: subdomainStr,
+              isActive: true,
+              expiresAt: { $gt: new Date() } // Not expired
             });
 
-            // Update subdomain last activity
-            subdomain.lastActivity = new Date();
-            await subdomain.save();
+            if (subdomain) {
+              // Get geolocation from source IP
+              const geolocation = getGeolocation(rinfo.address);
 
-            // Emit socket event for real-time update
-            if (io) {
-              io.to(`user_${subdomain.userId}`).emit('newDNSQuery', {
+              // Log DNS query to database
+              const dnsQuery = await DNSQuery.create({
                 subdomainId: subdomain._id,
-                query: dnsQuery
+                userId: subdomain.userId,
+                query: name,
+                queryType: Packet.TYPE[type] || 'UNKNOWN',
+                sourceIP: rinfo.address,
+                geolocation,
+                response: serverIP,
+                timestamp: new Date()
               });
-            }
 
-            console.log(`✓ DNS query logged for subdomain: ${subdomainStr}`);
+              // Update subdomain last activity
+              subdomain.lastActivity = new Date();
+              await subdomain.save();
+
+              // Emit socket event for real-time update
+              if (io) {
+                io.to(`user_${subdomain.userId}`).emit('newDNSQuery', {
+                  subdomainId: subdomain._id,
+                  query: dnsQuery
+                });
+              }
+
+              console.log(`✓ DNS query logged for subdomain: ${subdomainStr}`);
+            } else {
+              console.log(`⚠ DNS query for unknown/expired subdomain: ${subdomainStr}`);
+            }
+          } catch (dbError) {
+            console.error(`✗ Database error processing DNS query for ${subdomainStr}:`, dbError.message);
+            // Continue to send DNS response even if database logging fails
           }
         }
 
