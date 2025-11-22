@@ -3,17 +3,11 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange.svg)](https://ubuntu.com)
+[![Platform](https://img.shields.io/badge/platform-Linux-orange.svg)](https://ubuntu.com)
 [![Node.js](https://img.shields.io/badge/node.js-18%2B-brightgreen.svg)](https://nodejs.org)
 [![MongoDB](https://img.shields.io/badge/mongodb-6.0%2B-green.svg)](https://mongodb.com)
-[![React](https://img.shields.io/badge/react-18-blue.svg)](https://reactjs.org)
-[![Self-Hosted](https://img.shields.io/badge/self--hosted-yes-success.svg)](https://github.com/your-org/AlewoCallback)
-
-[![Security](https://img.shields.io/badge/security-pentesting-red.svg)](https://github.com/your-org/AlewoCallback)
-[![DNS Server](https://img.shields.io/badge/DNS-port%2053-blueviolet.svg)](https://github.com/your-org/AlewoCallback)
-[![HTTPS](https://img.shields.io/badge/HTTPS-Let's%20Encrypt-important.svg)](https://letsencrypt.org)
+[![Security Testing](https://img.shields.io/badge/security-pentesting-red.svg)](https://github.com/your-org/AlewoCallback)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/your-org/AlewoCallback/pulls)
-[![Made with Love](https://img.shields.io/badge/made%20with-%E2%9D%A4-ff69b4.svg)](https://github.com/your-org/AlewoCallback)
 
 <br>
 
@@ -29,12 +23,12 @@
 <br>
 
 <pre>
-╔══════════════════════════════════════════════════════╗
-║                    CALLBACK v1.0                     ║
-║                                                      ║
-║    Self-Hosted Out-of-Band Interaction Server       ║
-║         For Security Testing & Pentesting            ║
-╚══════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════╗
+║           CALLBACK PLATFORM v1.0           ║
+║                                            ║
+║  Out-of-Band Interaction Server for SSRF, ║
+║    XXE, SQLi & Blind Vulnerability Tests   ║
+╚════════════════════════════════════════════╝
 </pre>
 
 </div>
