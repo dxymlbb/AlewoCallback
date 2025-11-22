@@ -8,7 +8,10 @@ class SocketService {
   connect(token) {
     if (this.socket?.connected) return;
 
-    this.socket = io({
+    // Get the API URL from environment or use current origin
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+
+    this.socket = io(apiUrl, {
       auth: { token }
     });
 

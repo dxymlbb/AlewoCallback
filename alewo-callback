@@ -495,6 +495,19 @@ cmd_uninstall() {
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
+    echo -e "${YELLOW}This will remove:${NC}"
+    echo "  • Application files and configuration"
+    echo "  • MongoDB database (alewo-callback)"
+    echo "  • SSL certificates (if installed)"
+    echo "  • Nginx configuration"
+    echo "  • Cron jobs for certificate renewal"
+    echo "  • Firewall rules"
+    echo "  • PM2 processes"
+    echo ""
+    echo -e "${CYAN}This will NOT remove:${NC}"
+    echo "  • Node.js, MongoDB, Nginx, PM2 (system packages)"
+    echo "  • System-wide configurations"
+    echo ""
 
     read -p "$(echo -e ${YELLOW}Are you sure you want to continue? ${NC}[y/N]: )" -n 1 -r
     echo
@@ -509,27 +522,121 @@ cmd_uninstall() {
         exit 1
     fi
 
-    log_info "Stopping services..."
+    echo ""
+    log_info "Starting complete uninstallation..."
+    echo ""
+
+    # 1. Stop PM2 processes
+    log_info "Stopping PM2 processes..."
     "$PM2_BIN" delete "$APP_NAME" 2>/dev/null || true
     "$PM2_BIN" kill 2>/dev/null || true
+    log_success "PM2 processes stopped"
 
+    # 2. Remove systemd services
     log_info "Removing systemd services..."
     systemctl stop pm2-root 2>/dev/null || true
     systemctl disable pm2-root 2>/dev/null || true
     rm -f /etc/systemd/system/pm2-root.service
+    systemctl daemon-reload 2>/dev/null || true
+    log_success "Systemd services removed"
 
+    # 3. Remove application files
     log_info "Removing application files..."
     rm -rf "$INSTALL_DIR"
+    log_success "Application files removed"
 
+    # 4. Remove management command
     log_info "Removing management command..."
     rm -f /usr/local/bin/alewo-callback
+    log_success "Management command removed"
 
+    # 5. Remove Nginx configuration
     log_info "Removing Nginx configuration..."
     rm -f /etc/nginx/sites-enabled/alewo-callback
     rm -f /etc/nginx/sites-available/alewo-callback
     systemctl reload nginx 2>/dev/null || true
+    log_success "Nginx configuration removed"
 
-    log_success "AlewoCallback has been uninstalled"
+    # 6. Drop MongoDB database
+    log_info "Dropping MongoDB database..."
+    if command -v mongosh &> /dev/null; then
+        mongosh --quiet --eval "db.getSiblingDB('alewo-callback').dropDatabase()" 2>/dev/null || log_warning "Could not drop database with mongosh"
+    elif command -v mongo &> /dev/null; then
+        mongo alewo-callback --quiet --eval "db.dropDatabase()" 2>/dev/null || log_warning "Could not drop database with mongo"
+    else
+        log_warning "MongoDB client not found, skipping database drop"
+    fi
+    log_success "MongoDB database dropped"
+
+    # 7. Remove SSL certificates
+    log_info "Removing SSL certificates..."
+    if [ -d "/etc/letsencrypt/live" ]; then
+        # Find and remove all certificates for this installation
+        for domain in /etc/letsencrypt/live/*; do
+            if [ -d "$domain" ]; then
+                domain_name=$(basename "$domain")
+                log_info "  Removing certificate for: $domain_name"
+                certbot delete --cert-name "$domain_name" --non-interactive 2>/dev/null || true
+            fi
+        done
+    fi
+    rm -rf /etc/ssl/alewo-callback 2>/dev/null || true
+    log_success "SSL certificates removed"
+
+    # 8. Remove cron jobs
+    log_info "Removing cron jobs..."
+    (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback") | crontab - 2>/dev/null || true
+    log_success "Cron jobs removed"
+
+    # 9. Restore systemd-resolved (if disabled during installation)
+    log_info "Checking systemd-resolved..."
+    if ! systemctl is-active --quiet systemd-resolved; then
+        log_info "  Restoring systemd-resolved..."
+        # Remove immutable flag from resolv.conf
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+        rm -f /etc/resolv.conf
+        # Re-enable systemd-resolved
+        systemctl enable systemd-resolved 2>/dev/null || true
+        systemctl start systemd-resolved 2>/dev/null || true
+        # Create symlink to systemd-resolved
+        ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
+        log_success "systemd-resolved restored"
+    else
+        log_info "  systemd-resolved already active"
+    fi
+
+    # 10. Remove firewall rules (optional - ask user)
+    echo ""
+    read -p "$(echo -e ${YELLOW}Remove firewall rules for ports 80, 443, 53? ${NC}[y/N]: )" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Removing firewall rules..."
+        if command -v ufw &> /dev/null; then
+            ufw delete allow 80/tcp 2>/dev/null || true
+            ufw delete allow 443/tcp 2>/dev/null || true
+            ufw delete allow 53/udp 2>/dev/null || true
+            log_success "Firewall rules removed"
+        else
+            log_info "UFW not found, skipping firewall cleanup"
+        fi
+    else
+        log_info "Keeping firewall rules"
+    fi
+
+    # 11. Clean up temporary files
+    log_info "Cleaning up temporary files..."
+    rm -f /tmp/alewo-callback-* 2>/dev/null || true
+    log_success "Temporary files cleaned"
+
+    echo ""
+    log_success "═══════════════════════════════════════════════════════"
+    log_success "AlewoCallback has been completely uninstalled!"
+    log_success "═══════════════════════════════════════════════════════"
+    echo ""
+    echo -e "${CYAN}Note:${NC} System packages (Node.js, MongoDB, Nginx) are still installed."
+    echo -e "${CYAN}To remove them, run:${NC}"
+    echo "  sudo apt remove --purge nodejs mongodb-org* nginx certbot -y"
+    echo "  sudo apt autoremove -y"
     echo ""
 }
 

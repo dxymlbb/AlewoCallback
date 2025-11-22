@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 
@@ -40,52 +41,54 @@ const PublicRoute = ({ children }) => {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1f2937',
-              color: '#fff',
-              border: '1px solid #374151',
-            },
-            success: {
-              iconTheme: {
-                primary: '#22c55e',
-                secondary: '#fff',
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: '#1f2937',
+                color: '#fff',
+                border: '1px solid #374151',
               },
-            },
-            error: {
-              iconTheme: {
-                primary: '#ef4444',
-                secondary: '#fff',
+              success: {
+                iconTheme: {
+                  primary: '#22c55e',
+                  secondary: '#fff',
+                },
               },
-            },
-          }}
-        />
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
+              error: {
+                iconTheme: {
+                  primary: '#ef4444',
+                  secondary: '#fff',
+                },
+              },
+            }}
           />
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <Dashboard />
-              </PrivateRoute>
-            }
-          />
-          {/* Redirect any unknown routes to login */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <PrivateRoute>
+                  <Dashboard />
+                </PrivateRoute>
+              }
+            />
+            {/* Redirect any unknown routes to login */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

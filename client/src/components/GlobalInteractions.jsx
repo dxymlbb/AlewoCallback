@@ -24,6 +24,7 @@ const GlobalInteractions = () => {
   }, [searchTerm, filterType, startDate, endDate]);
 
   const fetchInteractions = async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
@@ -35,6 +36,7 @@ const GlobalInteractions = () => {
       setInteractions(response.data);
     } catch (error) {
       toast.error('Failed to fetch interactions');
+      console.error('Failed to fetch interactions:', error);
     } finally {
       setLoading(false);
     }
