@@ -12,17 +12,23 @@
 <br>
 
 <pre>
-  ▄▀█ █   █▀▀ █ █ █ █▀█
-  █▀█ █▄▄ ██▄ ▀▄▀▄▀ █▄█
+   ▄▀█ █   █▀▀ █ █ █ █▀█
+   █▀█ █▄▄ ██▄ ▀▄▀▄▀ █▄█
+       CALLBACK v1.0
 </pre>
 
+<br>
+
 <pre>
-╔═══════════════════════════════════╗
-║      CALLBACK PLATFORM v1.0       ║
-║                                   ║
-║  OOB Interaction Server for SSRF ║
-║    XXE, SQLi & Blind Vulns Test   ║
-╚═══════════════════════════════════╝
+┌─────────────────────────────────────────┐
+│  Out-of-Band Interaction Server         │
+│  For Security Testing & Pentesting      │
+│                                         │
+│  ✓ DNS Queries Logging (A/TXT/MX/NS)   │
+│  ✓ HTTP/HTTPS Requests Capture         │
+│  ✓ Real-time Geolocation Tracking      │
+│  ✓ SSRF, XXE, SQLi Detection           │
+└─────────────────────────────────────────┘
 </pre>
 
 </div>
