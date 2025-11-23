@@ -647,13 +647,31 @@ cmd_uninstall() {
         log_info "  Restoring systemd-resolved..."
         # Remove immutable flag from resolv.conf
         chattr -i /etc/resolv.conf 2>/dev/null || true
-        rm -f /etc/resolv.conf
-        # Re-enable systemd-resolved
+
+        # Re-enable systemd-resolved FIRST (before removing resolv.conf)
         systemctl enable systemd-resolved 2>/dev/null || true
         systemctl start systemd-resolved 2>/dev/null || true
-        # Create symlink to systemd-resolved
-        ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
-        log_success "systemd-resolved restored"
+
+        # Wait for systemd-resolved to be ready
+        sleep 2
+
+        # Only recreate resolv.conf if systemd-resolved is running
+        if systemctl is-active --quiet systemd-resolved; then
+            rm -f /etc/resolv.conf
+            ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
+            log_success "systemd-resolved restored"
+        else
+            # Fallback: Create manual DNS config if systemd-resolved fails
+            log_warning "systemd-resolved failed to start, using fallback DNS config"
+            rm -f /etc/resolv.conf
+            cat > /etc/resolv.conf << 'EOFRESOLVER'
+# Fallback DNS configuration (Google DNS + Cloudflare)
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+nameserver 1.1.1.1
+EOFRESOLVER
+            log_success "Fallback DNS configuration created"
+        fi
     else
         log_info "  systemd-resolved already active"
     fi
