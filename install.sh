@@ -560,10 +560,15 @@ setup_application() {
     if [ "$EXISTING_INSTALLATION" = true ] && [ -d "$BACKUP_DIR" ]; then
         log_info "Restoring existing configuration..."
 
+        ENV_RESTORED=false
+
         # Restore .env (existing config takes priority)
         if [ -f "$BACKUP_DIR/.env" ]; then
             cp "$BACKUP_DIR/.env" "$INSTALL_DIR/.env"
             log_success "  ✓ Restored .env (existing config preserved)"
+            ENV_RESTORED=true
+        else
+            log_warning "  ✗ No .env found in backup, will create new one"
         fi
 
         # Restore certs
@@ -579,11 +584,15 @@ setup_application() {
             log_success "  ✓ Restored client/build (skipping rebuild)"
         fi
 
-        log_success "Configuration restored from backup"
-
-        # Skip .env creation since we restored it
-        mark_step_complete "app_setup"
-        return 0
+        # Only skip .env creation if we successfully restored it
+        if [ "$ENV_RESTORED" = true ]; then
+            log_success "Configuration restored from backup"
+            mark_step_complete "app_setup"
+            return 0
+        else
+            log_info "Creating new .env file..."
+            # Continue to .env creation below
+        fi
     fi
 
     # Create .env file (only for fresh installation)
