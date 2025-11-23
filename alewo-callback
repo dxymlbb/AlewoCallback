@@ -694,8 +694,8 @@ cmd_uninstall() {
         log_info "  Skipping DNS restoration (no changes to /etc/resolv.conf)"
     fi
 
-    # Remove state directory if empty
-    rmdir /var/lib/alewo-callback 2>/dev/null || true
+    # Remove state directory (force remove even if not empty)
+    rm -rf /var/lib/alewo-callback 2>/dev/null || true
 
     # 10. Remove firewall rules (optional - ask user)
     echo ""
@@ -715,9 +715,13 @@ cmd_uninstall() {
         log_info "Keeping firewall rules"
     fi
 
-    # 11. Clean up temporary files
-    log_info "Cleaning up temporary files..."
+    # 11. Clean up temporary files and state files
+    log_info "Cleaning up temporary and state files..."
     rm -f /tmp/alewo-callback-* 2>/dev/null || true
+    rm -rf /tmp/alewo-callback-backup-* 2>/dev/null || true
+    rm -f /tmp/alewo-callback-install-state 2>/dev/null || true
+    rm -f /tmp/alewo-callback-config 2>/dev/null || true
+    rm -f /tmp/alewo-callback-resolv-backup 2>/dev/null || true
     log_success "Temporary files cleaned"
 
     echo ""
