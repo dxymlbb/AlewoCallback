@@ -507,6 +507,13 @@ setup_application() {
 
     INSTALL_DIR="/var/www/alewo-callback"
 
+    # Detect existing installation
+    EXISTING_INSTALLATION=false
+    if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/.env" ]; then
+        EXISTING_INSTALLATION=true
+        log_info "Detected existing installation"
+    fi
+
     # Create directory if not exists
     if [ ! -d "$INSTALL_DIR" ]; then
         mkdir -p "$INSTALL_DIR" || {
@@ -514,6 +521,31 @@ setup_application() {
             return 1
         }
         log_info "Created directory: $INSTALL_DIR"
+    fi
+
+    # Backup existing config before copying files
+    if [ "$EXISTING_INSTALLATION" = true ]; then
+        log_info "Backing up existing configuration..."
+        BACKUP_DIR="/tmp/alewo-callback-backup-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+
+        # Backup .env file
+        if [ -f "$INSTALL_DIR/.env" ]; then
+            cp "$INSTALL_DIR/.env" "$BACKUP_DIR/.env"
+            log_info "  ✓ Backed up .env to $BACKUP_DIR"
+        fi
+
+        # Backup certs directory
+        if [ -d "$INSTALL_DIR/certs" ]; then
+            cp -r "$INSTALL_DIR/certs" "$BACKUP_DIR/"
+            log_info "  ✓ Backed up certs/ to $BACKUP_DIR"
+        fi
+
+        # Backup client/build (to avoid rebuild if same version)
+        if [ -d "$INSTALL_DIR/client/build" ]; then
+            cp -r "$INSTALL_DIR/client/build" "$BACKUP_DIR/"
+            log_info "  ✓ Backed up client/build to $BACKUP_DIR"
+        fi
     fi
 
     # Copy files
@@ -524,7 +556,37 @@ setup_application() {
     }
     cd "$INSTALL_DIR"
 
-    # Create .env file
+    # Restore backed up config
+    if [ "$EXISTING_INSTALLATION" = true ] && [ -d "$BACKUP_DIR" ]; then
+        log_info "Restoring existing configuration..."
+
+        # Restore .env (existing config takes priority)
+        if [ -f "$BACKUP_DIR/.env" ]; then
+            cp "$BACKUP_DIR/.env" "$INSTALL_DIR/.env"
+            log_success "  ✓ Restored .env (existing config preserved)"
+        fi
+
+        # Restore certs
+        if [ -d "$BACKUP_DIR/certs" ]; then
+            cp -r "$BACKUP_DIR/certs" "$INSTALL_DIR/"
+            log_success "  ✓ Restored certs/"
+        fi
+
+        # Restore client/build (skip rebuild if same version)
+        if [ -d "$BACKUP_DIR/build" ]; then
+            mkdir -p "$INSTALL_DIR/client"
+            cp -r "$BACKUP_DIR/build" "$INSTALL_DIR/client/"
+            log_success "  ✓ Restored client/build (skipping rebuild)"
+        fi
+
+        log_success "Configuration restored from backup"
+
+        # Skip .env creation since we restored it
+        mark_step_complete "app_setup"
+        return 0
+    fi
+
+    # Create .env file (only for fresh installation)
     log_info "Creating environment configuration..."
     cat > .env <<EOF
 # Server Configuration
