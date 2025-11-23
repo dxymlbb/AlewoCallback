@@ -2034,10 +2034,16 @@ fix_dns_port_conflict() {
                 1)
                     log_info "Disabling systemd-resolved to free port 53..."
 
+                    # Save state: "We disabled systemd-resolved"
+                    # This file will be used by uninstall to know what to restore
+                    mkdir -p /var/lib/alewo-callback
+                    echo "SYSTEMD_RESOLVED_DISABLED_BY_INSTALLER=true" > /var/lib/alewo-callback/dns-state
+                    echo "SYSTEMD_RESOLVED_WAS_ACTIVE=$SYSTEMD_RESOLVED_WAS_ACTIVE" >> /var/lib/alewo-callback/dns-state
+
                     # Backup original resolv.conf
                     if [ -L /etc/resolv.conf ]; then
                         RESOLV_CONF_BACKUP=$(readlink -f /etc/resolv.conf)
-                        echo "$RESOLV_CONF_BACKUP" > /tmp/alewo-callback-resolv-backup
+                        echo "RESOLV_CONF_BACKUP=$RESOLV_CONF_BACKUP" >> /var/lib/alewo-callback/dns-state
                     fi
 
                     # Stop and disable systemd-resolved
