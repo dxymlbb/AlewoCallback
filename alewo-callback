@@ -122,24 +122,24 @@ show_banner() {
 
 # Check if PM2 process is running
 is_pm2_running() {
-    # Method 1: Try PM2 API first
+    # Method 1 (Most Reliable): Check if ports are listening
+    if lsof -Pi :${HTTP_PORT} -sTCP:LISTEN > /dev/null 2>&1 && \
+       lsof -Pi :${DNS_PORT} -sUDP > /dev/null 2>&1; then
+        # Both HTTP and DNS ports are in use, app is running
+        return 0
+    fi
+
+    # Method 2: Check via process name (works without PM2 access)
+    if pgrep -f "node.*server/index.js" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    # Method 3: Try PM2 API (least reliable due to PM2_HOME issues)
     if "$PM2_BIN" describe "$APP_NAME" > /dev/null 2>&1; then
         local status=$("$PM2_BIN" jlist 2>/dev/null | grep -o "\"name\":\"$APP_NAME\"[^}]*\"status\":\"[^\"]*\"" | grep -o 'status":"[^"]*"' | cut -d'"' -f3)
         if [ "$status" = "online" ]; then
             return 0
         fi
-    fi
-
-    # Method 2: Fallback - Check via process name (works without PM2 access)
-    if pgrep -f "node.*server/index.js.*alewo-callback" > /dev/null 2>&1; then
-        return 0
-    fi
-
-    # Method 3: Fallback - Check if ports are listening
-    if lsof -Pi :${HTTP_PORT} -sTCP:LISTEN > /dev/null 2>&1 && \
-       lsof -Pi :${DNS_PORT} -sUDP > /dev/null 2>&1; then
-        # Both HTTP and DNS ports are in use, likely our app
-        return 0
     fi
 
     return 1
