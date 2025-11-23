@@ -2349,12 +2349,6 @@ fix_dns_port_conflict() {
 
     log_step "Checking DNS Port 53 Availability"
 
-    # Backup systemd-resolved state for rollback
-    SYSTEMD_RESOLVED_WAS_ACTIVE=false
-    if systemctl is-active --quiet systemd-resolved; then
-        SYSTEMD_RESOLVED_WAS_ACTIVE=true
-    fi
-
     # Check if port 53 is in use
     if lsof -Pi :53 -sTCP:LISTEN -t >/dev/null 2>&1 || lsof -Pi :53 -sUDP -t >/dev/null 2>&1; then
         log_warning "Port 53 is already in use"
@@ -2363,9 +2357,21 @@ fix_dns_port_conflict() {
         if systemctl is-active --quiet systemd-resolved; then
             log_info "systemd-resolved is using port 53"
             echo ""
+            echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}║          DNS Port 53 Configuration Required              ║${NC}"
+            echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${YELLOW}Solution:${NC} Configure systemd-resolved to NOT listen on 0.0.0.0:53"
+            echo ""
+            echo -e "${GREEN}What will happen:${NC}"
+            echo "  ✓ systemd-resolved will ${GREEN}stay running${NC} (system DNS works)"
+            echo "  ✓ systemd-resolved will only listen on ${CYAN}127.0.0.53:53${NC} (localhost)"
+            echo "  ✓ AlewoCallback DNS server can bind to ${GREEN}0.0.0.0:53${NC} (public)"
+            echo "  ✓ ${GREEN}No systemd-resolved disable${NC} (safe uninstall, no git clone issues)"
+            echo ""
             echo -e "${YELLOW}Options:${NC}"
-            echo "  1. Disable systemd-resolved and use AlewoCallback DNS server (Recommended)"
-            echo "  2. Keep systemd-resolved (DNS server will NOT work)"
+            echo "  1. Configure systemd-resolved (${GREEN}RECOMMENDED${NC} - safe, reversible)"
+            echo "  2. Skip DNS server setup (HTTP/HTTPS only)"
             echo "  3. Cancel installation"
             echo ""
             read -p "Select option [1-3] (default: 1): " DNS_OPTION
@@ -2373,56 +2379,100 @@ fix_dns_port_conflict() {
 
             case $DNS_OPTION in
                 1)
-                    log_info "Disabling systemd-resolved to free port 53..."
+                    log_info "Configuring systemd-resolved..."
 
-                    # Save state: "We disabled systemd-resolved"
-                    # This file will be used by uninstall to know what to restore
+                    # Save state for uninstall
                     mkdir -p /var/lib/alewo-callback
-                    echo "SYSTEMD_RESOLVED_DISABLED_BY_INSTALLER=true" > /var/lib/alewo-callback/dns-state
-                    echo "SYSTEMD_RESOLVED_WAS_ACTIVE=$SYSTEMD_RESOLVED_WAS_ACTIVE" >> /var/lib/alewo-callback/dns-state
+                    echo "SYSTEMD_RESOLVED_CONFIGURED=true" > /var/lib/alewo-callback/dns-state
 
-                    # Backup original resolv.conf
-                    if [ -L /etc/resolv.conf ]; then
-                        RESOLV_CONF_BACKUP=$(readlink -f /etc/resolv.conf)
-                        echo "RESOLV_CONF_BACKUP=$RESOLV_CONF_BACKUP" >> /var/lib/alewo-callback/dns-state
+                    # Backup original resolved.conf
+                    if [ -f /etc/systemd/resolved.conf ]; then
+                        cp /etc/systemd/resolved.conf /var/lib/alewo-callback/resolved.conf.backup
+                        echo "RESOLVED_CONF_BACKED_UP=true" >> /var/lib/alewo-callback/dns-state
                     fi
 
-                    # Stop and disable systemd-resolved
-                    systemctl stop systemd-resolved
-                    systemctl disable systemd-resolved
+                    # Configure systemd-resolved to not bind to 0.0.0.0:53
+                    log_info "  Modifying /etc/systemd/resolved.conf..."
 
-                    # Setup manual DNS resolution
-                    log_info "Configuring manual DNS resolution..."
-                    # Remove immutable flag if exists
-                    chattr -i /etc/resolv.conf 2>/dev/null || true
-                    rm -f /etc/resolv.conf
-                    cat > /etc/resolv.conf <<EOF
-# AlewoCallback DNS Configuration
-# This file was created by AlewoCallback installer
-# To restore systemd-resolved, run: sudo alewo-callback uninstall
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-nameserver 1.1.1.1
-nameserver 208.67.222.222
+                    # Create new config
+                    cat > /etc/systemd/resolved.conf <<'EOF'
+[Resolve]
+# DNS servers for system resolution
+DNS=8.8.8.8 8.8.4.4 1.1.1.1
+FallbackDNS=208.67.222.222
+
+# DNSStubListener=no means systemd-resolved will NOT listen on 0.0.0.0:53
+# It only provides DNS resolution for local system via 127.0.0.53:53
+DNSStubListener=no
+
+# Cache settings
+Cache=yes
+CacheFromLocalhost=no
+
+# DNSSEC
+DNSSEC=no
+
+# DNS-over-TLS
+DNSOverTLS=no
 EOF
 
-                    # Make it immutable to prevent systemd from overwriting
-                    chattr +i /etc/resolv.conf
+                    log_success "  systemd-resolved configuration updated"
 
-                    # Verify DNS resolution works
-                    if ! nslookup google.com 8.8.8.8 >/dev/null 2>&1; then
-                        log_error "DNS resolution test failed!"
+                    # Restart systemd-resolved to apply changes
+                    log_info "  Restarting systemd-resolved..."
+                    systemctl restart systemd-resolved
+
+                    # Wait for service to be ready
+                    sleep 2
+
+                    # Verify service is still running
+                    if ! systemctl is-active --quiet systemd-resolved; then
+                        log_error "systemd-resolved failed to restart"
                         log_warning "Rolling back changes..."
-                        rollback_dns_changes
+                        if [ -f /var/lib/alewo-callback/resolved.conf.backup ]; then
+                            cp /var/lib/alewo-callback/resolved.conf.backup /etc/systemd/resolved.conf
+                            systemctl restart systemd-resolved
+                        fi
                         return 1
                     fi
 
-                    log_success "systemd-resolved disabled, port 53 is now available"
-                    log_success "DNS resolution verified working"
+                    # Verify port 53 is now free for 0.0.0.0 binding
+                    sleep 2
+                    if lsof -Pi :53 -sTCP:LISTEN -t >/dev/null 2>&1 || lsof -Pi :53 -sUDP -t >/dev/null 2>&1; then
+                        # Check if it's still listening on 0.0.0.0 or just 127.0.0.53
+                        LISTENER=$(lsof -Pi :53 -sTCP:LISTEN -t 2>/dev/null || lsof -Pi :53 -sUDP -t 2>/dev/null | head -1)
+                        if [ -n "$LISTENER" ]; then
+                            LISTEN_ADDR=$(lsof -Pan -p $LISTENER -i :53 2>/dev/null | grep LISTEN | awk '{print $9}')
+                            if echo "$LISTEN_ADDR" | grep -q "127.0.0.53:53"; then
+                                log_success "  ✓ systemd-resolved now only listens on 127.0.0.53:53"
+                                log_success "  ✓ Port 0.0.0.0:53 is free for AlewoCallback"
+                            else
+                                log_warning "  systemd-resolved still binding to $LISTEN_ADDR"
+                                log_warning "  DNS server may fail to start"
+                            fi
+                        fi
+                    else
+                        log_success "  ✓ Port 53 is completely free"
+                    fi
+
+                    # Verify DNS resolution still works
+                    if ! nslookup google.com 127.0.0.53 >/dev/null 2>&1 && ! nslookup google.com 8.8.8.8 >/dev/null 2>&1; then
+                        log_error "DNS resolution test failed!"
+                        log_warning "Rolling back changes..."
+                        if [ -f /var/lib/alewo-callback/resolved.conf.backup ]; then
+                            cp /var/lib/alewo-callback/resolved.conf.backup /etc/systemd/resolved.conf
+                            systemctl restart systemd-resolved
+                        fi
+                        return 1
+                    fi
+
+                    log_success "systemd-resolved configured successfully"
+                    log_success "System DNS resolution: ✓ Working"
+                    log_success "Port 0.0.0.0:53: ✓ Available for AlewoCallback"
                     ;;
                 2)
-                    log_warning "Keeping systemd-resolved - DNS server will NOT work!"
-                    log_warning "AlewoCallback will function without DNS server (HTTP only)"
+                    log_warning "Skipping DNS server setup - AlewoCallback will work in HTTP/HTTPS only mode"
+                    log_info "DNS query logging will NOT be available"
                     ;;
                 3)
                     log_error "Installation cancelled by user"
