@@ -641,61 +641,96 @@ cmd_uninstall() {
     (crontab -l 2>/dev/null | grep -v "certbot renew" | grep -v "alewo-callback" | grep -v "acme.sh") | crontab - 2>/dev/null || true
     log_success "Cron jobs removed"
 
-    # 9. Restore systemd-resolved (ONLY if installer disabled it)
+    # 9. Restore systemd-resolved configuration (if installer modified it)
     log_info "Checking DNS configuration..."
 
     # Check if installer modified systemd-resolved
     DNS_STATE_FILE="/var/lib/alewo-callback/dns-state"
+    RESOLVED_BACKUP="/var/lib/alewo-callback/resolved.conf.backup"
+
     if [ -f "$DNS_STATE_FILE" ]; then
         # Load saved state
         source "$DNS_STATE_FILE"
 
-        if [ "$SYSTEMD_RESOLVED_DISABLED_BY_INSTALLER" = "true" ]; then
-            log_info "  Installer disabled systemd-resolved, restoring..."
+        if [ "$SYSTEMD_RESOLVED_CONFIGURED" = "true" ]; then
+            log_info "  Installer modified systemd-resolved config, restoring..."
+
+            # Restore original resolved.conf
+            if [ "$RESOLVED_CONF_BACKED_UP" = "true" ] && [ -f "$RESOLVED_BACKUP" ]; then
+                log_info "  Restoring original /etc/systemd/resolved.conf..."
+                cp "$RESOLVED_BACKUP" /etc/systemd/resolved.conf
+
+                # Restart systemd-resolved to apply original config
+                log_info "  Restarting systemd-resolved..."
+                systemctl restart systemd-resolved
+
+                # Wait for service
+                sleep 2
+
+                # Verify service is running
+                if systemctl is-active --quiet systemd-resolved; then
+                    log_success "  systemd-resolved restored successfully"
+                    log_success "  Original configuration applied"
+                else
+                    log_warning "  systemd-resolved failed to restart with original config"
+                    log_info "  System DNS may need manual check"
+                fi
+
+                # Remove backup
+                rm -f "$RESOLVED_BACKUP"
+            else
+                log_info "  No backup found, systemd-resolved will use current config"
+            fi
+
+            # Remove state file
+            rm -f "$DNS_STATE_FILE"
+
+        # Legacy support: Old installations that disabled systemd-resolved
+        elif [ "$SYSTEMD_RESOLVED_DISABLED_BY_INSTALLER" = "true" ]; then
+            log_warning "  Legacy installation detected (systemd-resolved was disabled)"
+            log_info "  Re-enabling systemd-resolved..."
 
             # Remove immutable flag from resolv.conf
             chattr -i /etc/resolv.conf 2>/dev/null || true
 
-            # Re-enable systemd-resolved FIRST (before removing resolv.conf)
+            # Re-enable systemd-resolved
             systemctl enable systemd-resolved 2>/dev/null || true
             systemctl start systemd-resolved 2>/dev/null || true
 
-            # Wait for systemd-resolved to be ready
+            # Wait for service
             sleep 2
 
-            # Only recreate resolv.conf if systemd-resolved is running
+            # Restore resolv.conf symlink
             if systemctl is-active --quiet systemd-resolved; then
                 rm -f /etc/resolv.conf
-
-                # Restore original resolv.conf if backup exists
                 if [ -n "$RESOLV_CONF_BACKUP" ] && [ -e "$RESOLV_CONF_BACKUP" ]; then
                     ln -sf "$RESOLV_CONF_BACKUP" /etc/resolv.conf 2>/dev/null || true
-                    log_success "  Restored original resolv.conf: $RESOLV_CONF_BACKUP"
                 else
-                    # Fallback to default systemd-resolved path
                     ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
-                    log_success "  Restored default systemd-resolved config"
                 fi
-
-                log_success "systemd-resolved restored successfully"
+                log_success "  systemd-resolved re-enabled successfully"
             else
-                # Fallback: Keep manual DNS config if systemd-resolved fails
-                log_warning "systemd-resolved failed to start"
-                log_info "  Keeping manual DNS configuration (no changes to /etc/resolv.conf)"
+                log_warning "  systemd-resolved failed to start"
             fi
 
-            # Remove state file after successful restore
             rm -f "$DNS_STATE_FILE"
         else
-            log_info "  systemd-resolved was not disabled by installer, skipping restore"
+            log_info "  systemd-resolved was not modified by installer"
         fi
     else
         log_info "  No DNS state file found - installer did not modify systemd-resolved"
-        log_info "  Skipping DNS restoration (no changes to /etc/resolv.conf)"
     fi
 
     # Remove state directory (force remove even if not empty)
     rm -rf /var/lib/alewo-callback 2>/dev/null || true
+
+    # Verify DNS resolution works after cleanup
+    if ! nslookup google.com >/dev/null 2>&1; then
+        log_warning "DNS resolution test failed after cleanup"
+        log_info "You may need to manually check /etc/systemd/resolved.conf"
+    else
+        log_success "DNS resolution verified working"
+    fi
 
     # 10. Remove firewall rules (optional - ask user)
     echo ""
