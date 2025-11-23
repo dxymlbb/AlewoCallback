@@ -15,6 +15,20 @@ const RCODE = {
   REFUSED: 5
 };
 
+// DNS Type Name Mapping (reverse lookup for logging)
+const DNS_TYPE_NAMES = {
+  1: 'A',
+  2: 'NS',
+  5: 'CNAME',
+  6: 'SOA',
+  12: 'PTR',
+  15: 'MX',
+  16: 'TXT',
+  28: 'AAAA',
+  33: 'SRV',
+  255: 'ANY'
+};
+
 // Get server IP from environment or detect
 const getServerIP = () => {
   return process.env.SERVER_IP || '127.0.0.1';
@@ -54,7 +68,7 @@ export const startDNSServer = (io) => {
       const [question] = request.questions;
       const { name, type } = question;
 
-      console.log(`DNS Query: ${name} (${Packet.TYPE[type]}) from ${rinfo.address}`);
+      console.log(`DNS Query: ${name} (${DNS_TYPE_NAMES[type] || type}) from ${rinfo.address}`);
 
       try {
         // Extract subdomain from query
@@ -78,7 +92,7 @@ export const startDNSServer = (io) => {
                 subdomainId: subdomain._id,
                 userId: subdomain.userId,
                 query: name,
-                queryType: Packet.TYPE[type] || 'UNKNOWN',
+                queryType: DNS_TYPE_NAMES[type] || `UNKNOWN(${type})`,
                 sourceIP: rinfo.address,
                 geolocation,
                 response: serverIP,
