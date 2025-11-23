@@ -1192,21 +1192,26 @@ setup_ssl() {
             echo ""
             echo -e "${CYAN}SSL Setup Options:${NC}"
             echo ""
-            echo "  1. Let's Encrypt with DNS Challenge (Wildcard support, 90 days)"
-            echo "  2. Let's Encrypt with HTTP Challenge (No wildcard, 90 days)"
-            echo "  3. Cloudflare Origin Certificate (${GREEN}RECOMMENDED${NC} - 15 years, no rate limit)"
-            echo "  4. acme.sh with Cloudflare API (Auto DNS challenge, 90 days)"
-            echo "  5. Self-signed Certificate (Development only)"
+            echo "  1. Let's Encrypt with DNS Challenge (Wildcard support, manual TXT records)"
+            echo "  2. Let's Encrypt with HTTP Challenge (${GREEN}RECOMMENDED${NC} - Fully automatic, free)"
+            echo "  3. Cloudflare Origin Certificate (${RED}BREAKS DNS LOGGING - NOT RECOMMENDED${NC})"
+            echo "  4. acme.sh with Cloudflare API (Auto DNS challenge, requires Cloudflare account)"
+            echo "  5. Self-signed Certificate (Development only, browser warnings)"
             echo "  6. Skip SSL setup (Use HTTP only)"
             echo ""
             echo -e "${YELLOW}Rate Limits:${NC}"
-            echo "  • Let's Encrypt: 5 certificates per week"
-            echo "  • Cloudflare Origin: NO LIMITS (Requires Cloudflare proxy)"
+            echo "  • Let's Encrypt: 5 certificates per week (plenty for most users)"
+            echo "  • Cloudflare Origin: NO LIMITS (${RED}WARNING: Requires proxy, breaks DNS logging!${NC})"
             echo "  • acme.sh: Same as Let's Encrypt (can use ZeroSSL)"
             echo ""
+            echo -e "${YELLOW}Important Notes:${NC}"
+            echo "  • ${RED}Option 3 (Cloudflare) requires proxy mode (orange cloud)${NC}"
+            echo "  • ${RED}Cloudflare proxy will BREAK DNS query logging feature!${NC}"
+            echo "  • ${GREEN}Option 2 (HTTP Challenge) is BEST for AlewoCallback${NC}"
+            echo ""
 
-            read -p "Select option [1-6] (default: 3): " SSL_OPTION
-            SSL_OPTION=${SSL_OPTION:-3}
+            read -p "Select option [1-6] (default: 2): " SSL_OPTION
+            SSL_OPTION=${SSL_OPTION:-2}
 
             case $SSL_OPTION in
                 1)
@@ -1216,7 +1221,28 @@ setup_ssl() {
                     setup_letsencrypt_http_challenge
                     ;;
                 3)
-                    setup_cloudflare_origin_cert
+                    echo ""
+                    echo -e "${RED}╔═══════════════════════════════════════════════════════════╗${NC}"
+                    echo -e "${RED}║              ⚠️  DNS LOGGING WARNING  ⚠️                  ║${NC}"
+                    echo -e "${RED}╚═══════════════════════════════════════════════════════════╝${NC}"
+                    echo ""
+                    echo -e "${YELLOW}Cloudflare Origin Certificate requires Cloudflare PROXY mode!${NC}"
+                    echo ""
+                    echo -e "${RED}This will BREAK the following features:${NC}"
+                    echo "  ❌ DNS query logging (queries go to Cloudflare, not your server)"
+                    echo "  ❌ Real victim IP tracking (you'll see Cloudflare IPs)"
+                    echo "  ❌ Accurate geolocation (shows Cloudflare datacenter location)"
+                    echo ""
+                    echo -e "${GREEN}Recommended alternatives:${NC}"
+                    echo "  ✅ Use Option 2: Let's Encrypt HTTP Challenge (free, no DNS provider)"
+                    echo "  ✅ Use Cloudflare DNS-only mode (gray cloud) with Option 2"
+                    echo ""
+                    if confirm "Continue with Cloudflare anyway? (NOT RECOMMENDED)"; then
+                        setup_cloudflare_origin_cert
+                    else
+                        log_info "Switching to HTTP Challenge (Option 2)..."
+                        setup_letsencrypt_http_challenge
+                    fi
                     ;;
                 4)
                     setup_acme_sh
@@ -1229,8 +1255,8 @@ setup_ssl() {
                     USE_SSL=false
                     ;;
                 *)
-                    log_warning "Invalid option, using Cloudflare Origin Certificate..."
-                    setup_cloudflare_origin_cert
+                    log_warning "Invalid option, using HTTP Challenge (Option 2)..."
+                    setup_letsencrypt_http_challenge
                     ;;
             esac
         fi
@@ -1666,10 +1692,17 @@ setup_acme_sh() {
     echo "  ✓ Automatic renewal every 60 days"
     echo "  ✓ Wildcard certificate support"
     echo "  ✓ Can use ZeroSSL (no rate limits)"
+    echo "  ✓ ${GREEN}DNS logging WORKS${NC} (only uses API, no proxy required)"
     echo ""
     echo -e "${YELLOW}Requirements:${NC}"
     echo "  • Cloudflare account (free)"
     echo "  • Cloudflare API Token"
+    echo "  • ${GREEN}NOTE: Does NOT require Cloudflare proxy (gray cloud OK)${NC}"
+    echo ""
+    echo -e "${CYAN}Important:${NC}"
+    echo "  • This uses Cloudflare ${GREEN}API only${NC} (to add TXT records)"
+    echo "  • ${GREEN}Does NOT require proxy mode${NC} (orange cloud)"
+    echo "  • ${GREEN}DNS logging will work normally${NC}"
     echo ""
 
     # Install acme.sh if not exists
