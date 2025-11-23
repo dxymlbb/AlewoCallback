@@ -1190,47 +1190,109 @@ setup_ssl() {
         else
             # No existing certificate, show SSL setup options
             echo ""
-            echo -e "${CYAN}SSL Setup Options:${NC}"
+            echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}║                    SSL Certificate Setup                 ║${NC}"
+            echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
             echo ""
-            echo "  1. Let's Encrypt with DNS Challenge (Wildcard support, 90 days)"
-            echo "  2. Let's Encrypt with HTTP Challenge (No wildcard, 90 days)"
-            echo "  3. Cloudflare Origin Certificate (${GREEN}RECOMMENDED${NC} - 15 years, no rate limit)"
-            echo "  4. acme.sh with Cloudflare API (Auto DNS challenge, 90 days)"
-            echo "  5. Self-signed Certificate (Development only)"
-            echo "  6. Skip SSL setup (Use HTTP only)"
+            echo -e "${GREEN}Free & Easy Options (${GREEN}DNS Logging Works${NC}${GREEN}):${NC}"
             echo ""
-            echo -e "${YELLOW}Rate Limits:${NC}"
-            echo "  • Let's Encrypt: 5 certificates per week"
-            echo "  • Cloudflare Origin: NO LIMITS (Requires Cloudflare proxy)"
-            echo "  • acme.sh: Same as Let's Encrypt (can use ZeroSSL)"
+            echo "  ${CYAN}Let's Encrypt (Most Popular):${NC}"
+            echo "    1. HTTP Challenge (${GREEN}RECOMMENDED${NC} - Fully automatic, no DNS setup)"
+            echo "    2. DNS Challenge (Wildcard support, manual TXT records)"
+            echo ""
+            echo "  ${CYAN}Alternative Free CAs (No Rate Limits):${NC}"
+            echo "    3. ZeroSSL (${GREEN}FREE${NC} - No rate limits, auto-renewal, 90 days)"
+            echo "    4. BuyPass Go SSL (${GREEN}FREE${NC} - Norwegian CA, 180 days validity)"
+            echo "    5. Google Trust Services (${GREEN}FREE${NC} - Via acme.sh, 90 days)"
+            echo ""
+            echo "  ${CYAN}Advanced Options:${NC}"
+            echo "    6. acme.sh with Cloudflare DNS API (${GREEN}DNS logging works${NC}, auto wildcard)"
+            echo ""
+            echo "  ${RED}Not Recommended:${NC}"
+            echo "    7. Cloudflare Origin Certificate (${RED}BREAKS DNS LOGGING${NC})"
+            echo ""
+            echo "  ${YELLOW}Other:${NC}"
+            echo "    8. Self-signed Certificate (Development only)"
+            echo "    9. Skip SSL setup (HTTP only)"
+            echo ""
+            echo -e "${YELLOW}Comparison:${NC}"
+            echo "  ┌─────────────────┬──────────────┬────────────┬──────────────┐"
+            echo "  │ Provider        │ Validity     │ Rate Limit │ DNS Logging  │"
+            echo "  ├─────────────────┼──────────────┼────────────┼──────────────┤"
+            echo "  │ Let's Encrypt   │ 90 days      │ 5/week     │ ${GREEN}✓ Works${NC}      │"
+            echo "  │ ZeroSSL         │ 90 days      │ ${GREEN}NONE${NC}       │ ${GREEN}✓ Works${NC}      │"
+            echo "  │ BuyPass         │ 180 days     │ ${GREEN}NONE${NC}       │ ${GREEN}✓ Works${NC}      │"
+            echo "  │ Google Trust    │ 90 days      │ ${GREEN}NONE${NC}       │ ${GREEN}✓ Works${NC}      │"
+            echo "  │ Cloudflare Orig │ 15 years     │ ${GREEN}NONE${NC}       │ ${RED}✗ BROKEN${NC}     │"
+            echo "  └─────────────────┴──────────────┴────────────┴──────────────┘"
             echo ""
 
-            read -p "Select option [1-6] (default: 3): " SSL_OPTION
-            SSL_OPTION=${SSL_OPTION:-3}
+            read -p "Select option [1-9] (default: 1): " SSL_OPTION
+            SSL_OPTION=${SSL_OPTION:-1}
 
             case $SSL_OPTION in
                 1)
-                    setup_letsencrypt_dns_challenge
-                    ;;
-                2)
+                    # Let's Encrypt HTTP Challenge (RECOMMENDED)
                     setup_letsencrypt_http_challenge
                     ;;
+                2)
+                    # Let's Encrypt DNS Challenge
+                    setup_letsencrypt_dns_challenge
+                    ;;
                 3)
-                    setup_cloudflare_origin_cert
+                    # ZeroSSL
+                    setup_zerossl
                     ;;
                 4)
-                    setup_acme_sh
+                    # BuyPass Go SSL
+                    setup_buypass
                     ;;
                 5)
-                    setup_self_signed_ssl
+                    # Google Trust Services
+                    setup_google_trust
                     ;;
                 6)
+                    # acme.sh with Cloudflare API
+                    setup_acme_sh
+                    ;;
+                7)
+                    # Cloudflare Origin Certificate (with warning)
+                    echo ""
+                    echo -e "${RED}╔═══════════════════════════════════════════════════════════╗${NC}"
+                    echo -e "${RED}║              ⚠️  DNS LOGGING WARNING  ⚠️                  ║${NC}"
+                    echo -e "${RED}╚═══════════════════════════════════════════════════════════╝${NC}"
+                    echo ""
+                    echo -e "${YELLOW}Cloudflare Origin Certificate requires Cloudflare PROXY mode!${NC}"
+                    echo ""
+                    echo -e "${RED}This will BREAK the following features:${NC}"
+                    echo "  ❌ DNS query logging (queries go to Cloudflare, not your server)"
+                    echo "  ❌ Real victim IP tracking (you'll see Cloudflare IPs)"
+                    echo "  ❌ Accurate geolocation (shows Cloudflare datacenter location)"
+                    echo ""
+                    echo -e "${GREEN}Recommended alternatives:${NC}"
+                    echo "  ✅ Use Option 1: Let's Encrypt HTTP Challenge (free, fully automatic)"
+                    echo "  ✅ Use Option 3: ZeroSSL (no rate limits)"
+                    echo "  ✅ Use Cloudflare DNS-only mode (gray cloud) with Option 1"
+                    echo ""
+                    if confirm "Continue with Cloudflare anyway? (NOT RECOMMENDED)"; then
+                        setup_cloudflare_origin_cert
+                    else
+                        log_info "Switching to HTTP Challenge (Option 1)..."
+                        setup_letsencrypt_http_challenge
+                    fi
+                    ;;
+                8)
+                    # Self-signed Certificate
+                    setup_self_signed_ssl
+                    ;;
+                9)
+                    # Skip SSL
                     log_info "Skipping SSL setup"
                     USE_SSL=false
                     ;;
                 *)
-                    log_warning "Invalid option, using Cloudflare Origin Certificate..."
-                    setup_cloudflare_origin_cert
+                    log_warning "Invalid option, using HTTP Challenge (Option 1)..."
+                    setup_letsencrypt_http_challenge
                     ;;
             esac
         fi
@@ -1666,10 +1728,17 @@ setup_acme_sh() {
     echo "  ✓ Automatic renewal every 60 days"
     echo "  ✓ Wildcard certificate support"
     echo "  ✓ Can use ZeroSSL (no rate limits)"
+    echo "  ✓ ${GREEN}DNS logging WORKS${NC} (only uses API, no proxy required)"
     echo ""
     echo -e "${YELLOW}Requirements:${NC}"
     echo "  • Cloudflare account (free)"
     echo "  • Cloudflare API Token"
+    echo "  • ${GREEN}NOTE: Does NOT require Cloudflare proxy (gray cloud OK)${NC}"
+    echo ""
+    echo -e "${CYAN}Important:${NC}"
+    echo "  • This uses Cloudflare ${GREEN}API only${NC} (to add TXT records)"
+    echo "  • ${GREEN}Does NOT require proxy mode${NC} (orange cloud)"
+    echo "  • ${GREEN}DNS logging will work normally${NC}"
     echo ""
 
     # Install acme.sh if not exists
@@ -1790,6 +1859,269 @@ setup_acme_sh() {
     echo "  • Provider: $([ "$CERT_PROVIDER" = "2" ] && echo "${GREEN}ZeroSSL${NC}" || echo "${CYAN}Let's Encrypt${NC}")"
     echo "  • Certificate: ${BLUE}/etc/nginx/ssl/$DOMAIN.cert${NC}"
     echo "  • Private Key: ${BLUE}/etc/nginx/ssl/$DOMAIN.key${NC}"
+    echo ""
+
+    return 0
+}
+
+# ZeroSSL Setup (Free, No Rate Limits)
+setup_zerossl() {
+    log_step "ZeroSSL Certificate Setup"
+
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ZeroSSL - Free SSL Certificates              ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Benefits:${NC}"
+    echo "  ✓ ${GREEN}NO rate limits${NC} (unlimited certificates)"
+    echo "  ✓ ${GREEN}Fully automatic${NC} (HTTP-01 challenge, no DNS setup)"
+    echo "  ✓ ${GREEN}Auto-renewal${NC} every 60 days"
+    echo "  ✓ ${GREEN}DNS logging works${NC} perfectly (no proxy required)"
+    echo "  ✓ 90-day validity with automatic renewal"
+    echo ""
+    echo -e "${YELLOW}Note:${NC} Wildcard certificates not supported with HTTP challenge"
+    echo ""
+
+    # Install acme.sh if not exists
+    if [ ! -d "/root/.acme.sh" ]; then
+        log_info "Installing acme.sh..."
+        if ! curl -sSL https://get.acme.sh | sh -s email="$ADMIN_EMAIL" >/dev/null 2>&1; then
+            log_error "Failed to install acme.sh"
+            setup_self_signed_ssl
+            return 1
+        fi
+        source ~/.bashrc 2>/dev/null || true
+        log_success "acme.sh installed"
+    fi
+
+    ACME="/root/.acme.sh/acme.sh"
+    mkdir -p /etc/nginx/ssl
+
+    # Set ZeroSSL as default CA
+    $ACME --set-default-ca --server zerossl
+
+    # Stop nginx temporarily for standalone mode
+    systemctl stop nginx 2>/dev/null || true
+
+    log_info "Issuing certificate from ZeroSSL (this may take 1-2 minutes)..."
+
+    # Issue certificate using standalone mode (HTTP-01)
+    if ! $ACME --issue --standalone \
+        -d "$DOMAIN" \
+        --httpport 80 \
+        --keylength 2048 2>&1 | tee /tmp/zerossl-issue.log; then
+
+        log_error "Failed to issue certificate from ZeroSSL"
+        cat /tmp/zerossl-issue.log
+        systemctl start nginx 2>/dev/null || true
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Start nginx back
+    systemctl start nginx 2>/dev/null || true
+
+    log_success "Certificate issued from ZeroSSL!"
+
+    # Install certificate
+    log_info "Installing certificate..."
+    if ! $ACME --install-cert -d "$DOMAIN" \
+        --key-file "/etc/nginx/ssl/$DOMAIN.key" \
+        --fullchain-file "/etc/nginx/ssl/$DOMAIN.cert" \
+        --reloadcmd "systemctl reload nginx" 2>&1; then
+        log_error "Failed to install certificate"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    # Secure permissions
+    chmod 600 "/etc/nginx/ssl/$DOMAIN.key"
+    chmod 644 "/etc/nginx/ssl/$DOMAIN.cert"
+
+    # Update .env
+    sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=/etc/nginx/ssl/$DOMAIN.key|g" "$INSTALL_DIR/.env"
+    sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=/etc/nginx/ssl/$DOMAIN.cert|g" "$INSTALL_DIR/.env"
+
+    echo ""
+    echo -e "${GREEN}✓ ZeroSSL certificate installed successfully!${NC}"
+    echo ""
+    echo -e "${CYAN}Certificate Details:${NC}"
+    echo "  • Provider: ${GREEN}ZeroSSL${NC}"
+    echo "  • Validity: ${CYAN}90 days${NC} (auto-renews at 60 days)"
+    echo "  • Rate Limit: ${GREEN}NONE${NC} (unlimited)"
+    echo "  • DNS Logging: ${GREEN}✓ Works perfectly${NC}"
+    echo "  • Certificate: ${BLUE}/etc/nginx/ssl/$DOMAIN.cert${NC}"
+    echo "  • Private Key: ${BLUE}/etc/nginx/ssl/$DOMAIN.key${NC}"
+    echo ""
+
+    return 0
+}
+
+# BuyPass Go SSL Setup (Free, 180 days)
+setup_buypass() {
+    log_step "BuyPass Go SSL Certificate Setup"
+
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║          BuyPass Go SSL - Free 180-Day Certificates      ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Benefits:${NC}"
+    echo "  ✓ ${GREEN}180-day validity${NC} (longer than Let's Encrypt)"
+    echo "  ✓ ${GREEN}NO rate limits${NC} (unlimited certificates)"
+    echo "  ✓ ${GREEN}Fully automatic${NC} (HTTP-01 challenge)"
+    echo "  ✓ ${GREEN}DNS logging works${NC} perfectly"
+    echo "  ✓ Norwegian Certificate Authority (trusted globally)"
+    echo ""
+
+    # Install acme.sh if not exists
+    if [ ! -d "/root/.acme.sh" ]; then
+        log_info "Installing acme.sh..."
+        if ! curl -sSL https://get.acme.sh | sh -s email="$ADMIN_EMAIL" >/dev/null 2>&1; then
+            log_error "Failed to install acme.sh"
+            setup_self_signed_ssl
+            return 1
+        fi
+        source ~/.bashrc 2>/dev/null || true
+        log_success "acme.sh installed"
+    fi
+
+    ACME="/root/.acme.sh/acme.sh"
+    mkdir -p /etc/nginx/ssl
+
+    # Set BuyPass as CA
+    $ACME --set-default-ca --server buypass
+
+    # Stop nginx for standalone mode
+    systemctl stop nginx 2>/dev/null || true
+
+    log_info "Issuing certificate from BuyPass (this may take 1-2 minutes)..."
+
+    # Issue certificate
+    if ! $ACME --issue --standalone \
+        -d "$DOMAIN" \
+        --httpport 80 \
+        --keylength 2048 2>&1 | tee /tmp/buypass-issue.log; then
+
+        log_error "Failed to issue certificate from BuyPass"
+        cat /tmp/buypass-issue.log
+        systemctl start nginx 2>/dev/null || true
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    systemctl start nginx 2>/dev/null || true
+    log_success "Certificate issued from BuyPass!"
+
+    # Install certificate
+    if ! $ACME --install-cert -d "$DOMAIN" \
+        --key-file "/etc/nginx/ssl/$DOMAIN.key" \
+        --fullchain-file "/etc/nginx/ssl/$DOMAIN.cert" \
+        --reloadcmd "systemctl reload nginx" 2>&1; then
+        log_error "Failed to install certificate"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    chmod 600 "/etc/nginx/ssl/$DOMAIN.key"
+    chmod 644 "/etc/nginx/ssl/$DOMAIN.cert"
+
+    sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=/etc/nginx/ssl/$DOMAIN.key|g" "$INSTALL_DIR/.env"
+    sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=/etc/nginx/ssl/$DOMAIN.cert|g" "$INSTALL_DIR/.env"
+
+    echo ""
+    echo -e "${GREEN}✓ BuyPass SSL certificate installed successfully!${NC}"
+    echo ""
+    echo -e "${CYAN}Certificate Details:${NC}"
+    echo "  • Provider: ${GREEN}BuyPass Go SSL (Norwegian CA)${NC}"
+    echo "  • Validity: ${CYAN}180 days${NC} (auto-renews at 160 days)"
+    echo "  • Rate Limit: ${GREEN}NONE${NC}"
+    echo "  • DNS Logging: ${GREEN}✓ Works perfectly${NC}"
+    echo "  • Certificate: ${BLUE}/etc/nginx/ssl/$DOMAIN.cert${NC}"
+    echo ""
+
+    return 0
+}
+
+# Google Trust Services Setup
+setup_google_trust() {
+    log_step "Google Trust Services Certificate Setup"
+
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║      Google Trust Services - Free SSL Certificates       ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Benefits:${NC}"
+    echo "  ✓ ${GREEN}Powered by Google${NC} (highly trusted)"
+    echo "  ✓ ${GREEN}NO rate limits${NC}"
+    echo "  ✓ ${GREEN}Fully automatic${NC} (HTTP-01 challenge)"
+    echo "  ✓ ${GREEN}DNS logging works${NC} perfectly"
+    echo "  ✓ 90-day validity with auto-renewal"
+    echo ""
+
+    # Install acme.sh if not exists
+    if [ ! -d "/root/.acme.sh" ]; then
+        log_info "Installing acme.sh..."
+        if ! curl -sSL https://get.acme.sh | sh -s email="$ADMIN_EMAIL" >/dev/null 2>&1; then
+            log_error "Failed to install acme.sh"
+            setup_self_signed_ssl
+            return 1
+        fi
+        source ~/.bashrc 2>/dev/null || true
+        log_success "acme.sh installed"
+    fi
+
+    ACME="/root/.acme.sh/acme.sh"
+    mkdir -p /etc/nginx/ssl
+
+    # Set Google Trust Services as CA
+    $ACME --set-default-ca --server google
+
+    systemctl stop nginx 2>/dev/null || true
+
+    log_info "Issuing certificate from Google Trust Services..."
+
+    if ! $ACME --issue --standalone \
+        -d "$DOMAIN" \
+        --httpport 80 \
+        --keylength 2048 2>&1 | tee /tmp/google-issue.log; then
+
+        log_error "Failed to issue certificate from Google Trust Services"
+        cat /tmp/google-issue.log
+        systemctl start nginx 2>/dev/null || true
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    systemctl start nginx 2>/dev/null || true
+    log_success "Certificate issued from Google Trust Services!"
+
+    if ! $ACME --install-cert -d "$DOMAIN" \
+        --key-file "/etc/nginx/ssl/$DOMAIN.key" \
+        --fullchain-file "/etc/nginx/ssl/$DOMAIN.cert" \
+        --reloadcmd "systemctl reload nginx" 2>&1; then
+        log_error "Failed to install certificate"
+        setup_self_signed_ssl
+        return 1
+    fi
+
+    chmod 600 "/etc/nginx/ssl/$DOMAIN.key"
+    chmod 644 "/etc/nginx/ssl/$DOMAIN.cert"
+
+    sed -i "s|SSL_KEY_PATH=.*|SSL_KEY_PATH=/etc/nginx/ssl/$DOMAIN.key|g" "$INSTALL_DIR/.env"
+    sed -i "s|SSL_CERT_PATH=.*|SSL_CERT_PATH=/etc/nginx/ssl/$DOMAIN.cert|g" "$INSTALL_DIR/.env"
+
+    echo ""
+    echo -e "${GREEN}✓ Google Trust Services certificate installed!${NC}"
+    echo ""
+    echo -e "${CYAN}Certificate Details:${NC}"
+    echo "  • Provider: ${GREEN}Google Trust Services${NC}"
+    echo "  • Validity: ${CYAN}90 days${NC} (auto-renews at 60 days)"
+    echo "  • Rate Limit: ${GREEN}NONE${NC}"
+    echo "  • DNS Logging: ${GREEN}✓ Works perfectly${NC}"
+    echo "  • Certificate: ${BLUE}/etc/nginx/ssl/$DOMAIN.cert${NC}"
     echo ""
 
     return 0
