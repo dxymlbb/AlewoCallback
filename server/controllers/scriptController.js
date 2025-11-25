@@ -33,7 +33,7 @@ export const getScripts = async (req, res) => {
 // Generate script from template
 export const generateScript = async (req, res) => {
   try {
-    const { subdomainId, template, fileFormat } = req.body;
+    const { subdomainId, template, fileFormat, expiryMinutes } = req.body;
 
     if (!subdomainId || !template || !fileFormat) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -66,8 +66,14 @@ export const generateScript = async (req, res) => {
     const randomName = nanoid(8).toLowerCase();
     const filename = `${randomName}.${fileFormat}`;
 
-    // Calculate expiration time (5 minutes from now)
-    const expiresAt = new Date(Date.now() + (parseInt(process.env.FILE_CLEANUP_TIME) || 5) * 60 * 1000);
+    // Calculate expiration time with custom expiry (default: 5 minutes, range: 1min - 1440min/24h)
+    let expiryTime = expiryMinutes ? parseInt(expiryMinutes) : parseInt(process.env.FILE_CLEANUP_TIME) || 5;
+
+    // Validate expiry range: 1 minute to 1440 minutes (24 hours)
+    if (expiryTime < 1) expiryTime = 1;
+    if (expiryTime > 1440) expiryTime = 1440;
+
+    const expiresAt = new Date(Date.now() + expiryTime * 60 * 1000);
 
     // Create script
     const script = await Script.create({
@@ -91,7 +97,7 @@ export const generateScript = async (req, res) => {
 // Create custom script
 export const createCustomScript = async (req, res) => {
   try {
-    const { subdomainId, filename, content, fileFormat } = req.body;
+    const { subdomainId, filename, content, fileFormat, expiryMinutes } = req.body;
 
     if (!subdomainId || !filename || !content || !fileFormat) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -113,8 +119,14 @@ export const createCustomScript = async (req, res) => {
       return res.status(400).json({ message: 'Invalid filename format' });
     }
 
-    // Calculate expiration time
-    const expiresAt = new Date(Date.now() + (parseInt(process.env.FILE_CLEANUP_TIME) || 5) * 60 * 1000);
+    // Calculate expiration time with custom expiry (default: 5 minutes, range: 1min - 1440min/24h)
+    let expiryTime = expiryMinutes ? parseInt(expiryMinutes) : parseInt(process.env.FILE_CLEANUP_TIME) || 5;
+
+    // Validate expiry range: 1 minute to 1440 minutes (24 hours)
+    if (expiryTime < 1) expiryTime = 1;
+    if (expiryTime > 1440) expiryTime = 1440;
+
+    const expiresAt = new Date(Date.now() + expiryTime * 60 * 1000);
 
     // Create script
     const script = await Script.create({
