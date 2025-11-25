@@ -47,9 +47,12 @@ const extractSubdomain = (queryName, baseDomain) => {
   const match = name.match(regex);
 
   if (match && match[1]) {
-    // Extract the first label (subdomain)
-    const parts = match[1].split('.');
-    return parts[0].toLowerCase();
+    // Return full subdomain string (supports multi-level subdomains)
+    // Examples:
+    //   test.alewo.xyz → "test"
+    //   test.new.alewo.xyz → "test.new"
+    //   a.b.c.alewo.xyz → "a.b.c"
+    return match[1].toLowerCase();
   }
 
   return null;
