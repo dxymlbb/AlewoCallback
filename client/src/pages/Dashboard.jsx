@@ -25,6 +25,16 @@ const Dashboard = () => {
     };
   }, []);
 
+  // Handle subdomain selection with localStorage persistence
+  const handleSubdomainSelect = (subdomain) => {
+    setSelectedSubdomain(subdomain);
+    if (subdomain) {
+      localStorage.setItem('selectedSubdomainId', subdomain._id);
+    } else {
+      localStorage.removeItem('selectedSubdomainId');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Header */}
@@ -104,7 +114,10 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
             {/* Left Column */}
             <div className="space-y-6">
-              <SubdomainManager onSubdomainSelect={setSelectedSubdomain} />
+              <SubdomainManager
+                onSubdomainSelect={handleSubdomainSelect}
+                selectedSubdomainId={selectedSubdomain?._id}
+              />
               <ScriptGenerator subdomain={selectedSubdomain} />
             </div>
 

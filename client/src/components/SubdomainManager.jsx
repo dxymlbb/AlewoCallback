@@ -3,7 +3,7 @@ import { Plus, RefreshCw, Trash2, Copy, ToggleLeft, ToggleRight } from 'lucide-r
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
-const SubdomainManager = ({ onSubdomainSelect }) => {
+const SubdomainManager = ({ onSubdomainSelect, selectedSubdomainId }) => {
   const [subdomains, setSubdomains] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
@@ -19,6 +19,18 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
     try {
       const response = await api.get('/subdomains');
       setSubdomains(response.data);
+
+      // Restore selected subdomain from localStorage if exists
+      const savedSubdomainId = localStorage.getItem('selectedSubdomainId');
+      if (savedSubdomainId && onSubdomainSelect) {
+        const savedSubdomain = response.data.find(s => s._id === savedSubdomainId);
+        if (savedSubdomain) {
+          onSubdomainSelect(savedSubdomain);
+        } else {
+          // Subdomain no longer exists, clear from localStorage
+          localStorage.removeItem('selectedSubdomainId');
+        }
+      }
     } catch (error) {
       toast.error('Failed to fetch subdomains');
     } finally {
@@ -157,7 +169,9 @@ const SubdomainManager = ({ onSubdomainSelect }) => {
               <div
                 key={subdomain._id}
                 className={`p-4 rounded-lg border transition-all cursor-pointer ${
-                  subdomain.isActive
+                  selectedSubdomainId === subdomain._id
+                    ? 'bg-primary-500/10 border-primary-500 ring-2 ring-primary-500/50'
+                    : subdomain.isActive
                     ? 'bg-gray-800/50 border-gray-700 hover:border-primary-500'
                     : 'bg-gray-900/50 border-gray-800 opacity-60'
                 }`}

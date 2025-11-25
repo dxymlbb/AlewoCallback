@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import { connectDatabase } from './config/database.js';
 import { startCleanupService } from './utils/cleanupService.js';
 import { startSubdomainCleanup } from './utils/subdomainCleanupService.js';
+import { startScriptCleanup } from './utils/scriptCleanupService.js';
 import { startDNSServer } from './services/dnsServer.js';
 import { captureCallback } from './middleware/callbackHandler.js';
 import jwt from 'jsonwebtoken';
@@ -171,6 +172,7 @@ const startServer = async () => {
     console.log('🧹 Starting cleanup services...');
     startCleanupService();
     startSubdomainCleanup();
+    startScriptCleanup();
 
     // 3. Start HTTP server
     await new Promise((resolve) => {

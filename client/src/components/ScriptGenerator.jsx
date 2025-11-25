@@ -11,11 +11,13 @@ const ScriptGenerator = ({ subdomain }) => {
   const [scripts, setScripts] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [selectedFormat, setSelectedFormat] = useState('');
+  const [expiryMinutes, setExpiryMinutes] = useState(5);
   const [loading, setLoading] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customFilename, setCustomFilename] = useState('');
   const [customContent, setCustomContent] = useState('');
   const [customFormat, setCustomFormat] = useState('txt');
+  const [customExpiry, setCustomExpiry] = useState(5);
   const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'callback.local';
 
   useEffect(() => {
@@ -62,10 +64,11 @@ const ScriptGenerator = ({ subdomain }) => {
       const response = await api.post('/scripts/generate', {
         subdomainId: subdomain._id,
         template: selectedTemplate,
-        fileFormat: selectedFormat
+        fileFormat: selectedFormat,
+        expiryMinutes: expiryMinutes
       });
       setScripts([response.data, ...scripts]);
-      toast.success('Script generated!');
+      toast.success(`Script generated! Expires in ${expiryMinutes} minutes`);
     } catch (error) {
       toast.error('Failed to generate script');
     } finally {
@@ -81,13 +84,14 @@ const ScriptGenerator = ({ subdomain }) => {
         subdomainId: subdomain._id,
         filename: customFilename,
         content: customContent,
-        fileFormat: customFormat
+        fileFormat: customFormat,
+        expiryMinutes: customExpiry
       });
       setScripts([response.data, ...scripts]);
       setCustomFilename('');
       setCustomContent('');
       setShowCustomForm(false);
-      toast.success('Custom script created!');
+      toast.success(`Custom script created! Expires in ${customExpiry} minutes`);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create script');
     } finally {
@@ -165,7 +169,7 @@ const ScriptGenerator = ({ subdomain }) => {
 
       {/* Template Generator */}
       <div className="mb-6 p-4 bg-gray-900/50 rounded-lg space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Template Category
@@ -209,6 +213,21 @@ const ScriptGenerator = ({ subdomain }) => {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Expiry (minutes)
+            </label>
+            <input
+              type="number"
+              value={expiryMinutes}
+              onChange={(e) => setExpiryMinutes(parseInt(e.target.value) || 5)}
+              min="1"
+              max="1440"
+              className="input-field w-full"
+              title="1 minute to 1440 minutes (24 hours)"
+            />
+          </div>
+
           <div className="flex items-end">
             <button
               onClick={generateScript}
@@ -218,6 +237,9 @@ const ScriptGenerator = ({ subdomain }) => {
               {loading ? 'Generating...' : 'Generate'}
             </button>
           </div>
+        </div>
+        <div className="text-xs text-gray-500">
+          💡 Expiry range: 1 minute to 1440 minutes (24 hours)
         </div>
       </div>
 
@@ -253,18 +275,36 @@ const ScriptGenerator = ({ subdomain }) => {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              File Format Extension
-            </label>
-            <input
-              type="text"
-              value={customFormat}
-              onChange={(e) => setCustomFormat(e.target.value)}
-              className="input-field w-full"
-              placeholder="php"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                File Format Extension
+              </label>
+              <input
+                type="text"
+                value={customFormat}
+                onChange={(e) => setCustomFormat(e.target.value)}
+                className="input-field w-full"
+                placeholder="php"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Expiry (minutes)
+              </label>
+              <input
+                type="number"
+                value={customExpiry}
+                onChange={(e) => setCustomExpiry(parseInt(e.target.value) || 5)}
+                min="1"
+                max="1440"
+                className="input-field w-full"
+                title="1 minute to 1440 minutes (24 hours)"
+                required
+              />
+            </div>
           </div>
 
           <button type="submit" disabled={loading} className="btn-primary w-full">
@@ -399,7 +439,7 @@ const ScriptGenerator = ({ subdomain }) => {
 
       <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
         <p className="text-xs text-yellow-400">
-          ⚠️ Scripts automatically expire after 5 minutes for security reasons
+          ⚠️ Scripts auto-expire based on your custom expiry setting (1 min - 24 hours)
         </p>
       </div>
     </div>
